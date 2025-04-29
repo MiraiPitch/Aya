@@ -70,6 +70,8 @@ desktop.ini
 # IDE files
 .idea/
 .vscode/
+.cursor/
+.cursorrules
 *.swp
 *.swo
 *.sublime-workspace

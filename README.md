@@ -43,7 +43,12 @@ To exit the program, type 'q' as a message
 
 The script supports different video input modes:
 
-- Camera mode (default):
+- Audio-only mode (default):
+```bash
+python aya_local.py --mode none
+```
+
+- Camera mode:
 ```bash
 python aya_local.py --mode camera
 ```
@@ -51,11 +56,6 @@ python aya_local.py --mode camera
 - Screen sharing mode:
 ```bash
 python aya_local.py --mode screen
-```
-
-- Audio-only mode:
-```bash
-python aya_local.py --mode none
 ```
 
 
