@@ -39,11 +39,12 @@ pya = pyaudio.PyAudio()
 
 
 class LiveLoop:
-    def __init__(self, video_mode=DEFAULT_MODE, client=None, model=None, config=DEFAULT_CONFIG):
+    def __init__(self, video_mode=DEFAULT_MODE, client=None, model=None, config=DEFAULT_CONFIG, initial_message=None):
         self.video_mode = video_mode
         self.client = client
         self.model = model
         self.config = config
+        self.initial_message = initial_message
 
         self.audio_in_queue = None
         self.out_queue = None
@@ -199,7 +200,7 @@ class LiveLoop:
                 self.audio_in_queue = asyncio.Queue()
                 self.out_queue = asyncio.Queue(maxsize=5)
 
-                send_text_task = tg.create_task(self.send_text())
+                
                 tg.create_task(self.send_realtime())
                 tg.create_task(self.listen_audio())
                 if self.video_mode == "camera":
@@ -209,6 +210,11 @@ class LiveLoop:
 
                 tg.create_task(self.receive_audio())
                 tg.create_task(self.play_audio())
+
+                if self.initial_message:
+                    print(f"Sending initial message: {self.initial_message}")
+                    await self.session.send(input=self.initial_message, end_of_turn=True)
+                send_text_task = tg.create_task(self.send_text())
 
                 await send_text_task
                 raise asyncio.CancelledError("User requested exit")
