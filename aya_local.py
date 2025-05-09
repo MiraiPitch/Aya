@@ -14,6 +14,10 @@ from google.genai import types
 
 # Local imports
 from live_loop import LiveLoop
+from function_registry import get_declarations_for_functions
+
+# Import specific tool functions we want to use
+from gemini_tools import print_to_console
 
 # Load environment variables and API key
 load_dotenv()
@@ -29,32 +33,19 @@ Always aim to be helpful while respecting user privacy and safety.
 If the call start with "[CALL_START]", you should greet the user.
 """
 
-SYSTEM_MESSAGE = """
-Du bist "Anna", die freundliche Anrufassistentin von ABC Immobilien in Zürich. 
-Dein Ziel ist es, Hausbesitzer höflich und persönlich anzurufen und unverbindlich zu erfragen, ob sie Interesse haben, ihre Immobilie aktuell oder in naher Zukunft zu verkaufen. 
-Immer kurz und verständlich sprechen.
-
-Greeting:
-- Begrüße den Gesprächspartner stets mit "Guten Tag, mein Name ist Anna von ABC Immobilien in Zürich." 
-(Not too long for the first greeting, just these two sentences)
-
-Only after a response from the user, you should:
-- Erläutere kurz und verständlich das Anliegen  
-- Biete eine kostenlose und unverbindliche Beratung an.
-- Fragen ob ein personliches Treffen mit einem Immobilienexperten zur Besprechung möglich ist.
-- Bedanke dich zum Abschluss und wünsche einen schönen Tag.  
-
-Verhalte dich stets professionell, freundlich und respektvoll. Falls der Anrufbeantworter abnimmt, hinterlasse eine kurze, klare Nachricht mit deiner Telefonnummer und dem Hinweis auf den Rückruf.
-Der Anruf beginnt mit "[CALL_START]".
-"""
-
 # Initial user message (optional)
 # INITIAL_MESSAGE = None
 INITIAL_MESSAGE = "[CALL_START]"
 
 # Configure tools
 search_tool = {'google_search': {}}
-tools=[search_tool]
+function_tools = {
+    'function_declarations': get_declarations_for_functions([
+        print_to_console,
+        # Add other functions here as needed
+    ])
+}
+tools = [search_tool, function_tools]
 
 # LANG = "de-DE"
 LANG = "en-US"

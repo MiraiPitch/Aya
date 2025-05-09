@@ -17,6 +17,9 @@ import mss
 from google import genai
 from google.genai import types
 
+# Local imports
+from function_registry import execute_function
+
 # Compatibility for Python < 3.11
 import sys
 if sys.version_info < (3, 11, 0):
@@ -39,12 +42,16 @@ pya = pyaudio.PyAudio()
 
 
 class LiveLoop:
-    def __init__(self, video_mode=DEFAULT_MODE, client=None, model=None, config=DEFAULT_CONFIG, initial_message=None):
+    def __init__(self, video_mode=DEFAULT_MODE, client=None, model=None, config=DEFAULT_CONFIG, 
+                 initial_message=None, function_executor=None):
         self.video_mode = video_mode
         self.client = client
         self.model = model
         self.config = config
         self.initial_message = initial_message
+        # Function executor is a callable that takes function_name and args
+        # and returns a result. If None, the default execute_function from function_registry is used
+        self.function_executor = function_executor or execute_function
 
         self.audio_in_queue = None
         self.out_queue = None
@@ -169,6 +176,23 @@ class LiveLoop:
                     continue
                 if text := response.text:
                     print(text, end="")
+                
+                # Handle tool calls directly in the receive loop
+                if response.tool_call:
+                    function_responses = []
+                    for fc in response.tool_call.function_calls:
+                        # Execute the function using the provided executor
+                        result = self.function_executor(fc.name, fc.args)
+                        
+                        function_response = types.FunctionResponse(
+                            id=fc.id,
+                            name=fc.name,
+                            response=result
+                        )
+                        function_responses.append(function_response)
+                    
+                    # Send all function responses back to the model
+                    await self.session.send_tool_response(function_responses=function_responses)
 
             # If you interrupt the model, it sends a turn_complete.
             # For interruptions to work, we need to stop playback.
