@@ -166,8 +166,37 @@ class LiveLoop:
             data = await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **kwargs)
             await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
 
+    async def handle_tool_calls(self, tool_calls):
+        """Handle tool calls and return function responses."""
+        function_responses = []
+        for fc in tool_calls.function_calls:
+            # Execute the function using the provided executor
+            result = self.function_executor(fc.name, fc.args)
+            
+            function_response = types.FunctionResponse(
+                id=fc.id,
+                name=fc.name,
+                response=result
+            )
+            function_responses.append(function_response)
+        
+        # Send all function responses back to the model
+        await self.session.send_tool_response(function_responses=function_responses)
+
+    async def receive_text(self):
+        """Background task to handle text responses and tool calls."""
+        while True:
+            turn = self.session.receive()
+            async for response in turn:
+                if text := response.text:
+                    print(text, end="")
+                
+                # Handle tool calls
+                if response.tool_call:
+                    await self.handle_tool_calls(response.tool_call)
+
     async def receive_audio(self):
-        "Background task to reads from the websocket and write pcm chunks to the output queue"
+        """Background task to handle audio responses and tool calls."""
         while True:
             turn = self.session.receive()
             async for response in turn:
@@ -177,22 +206,9 @@ class LiveLoop:
                 if text := response.text:
                     print(text, end="")
                 
-                # Handle tool calls directly in the receive loop
+                # Handle tool calls
                 if response.tool_call:
-                    function_responses = []
-                    for fc in response.tool_call.function_calls:
-                        # Execute the function using the provided executor
-                        result = self.function_executor(fc.name, fc.args)
-                        
-                        function_response = types.FunctionResponse(
-                            id=fc.id,
-                            name=fc.name,
-                            response=result
-                        )
-                        function_responses.append(function_response)
-                    
-                    # Send all function responses back to the model
-                    await self.session.send_tool_response(function_responses=function_responses)
+                    await self.handle_tool_calls(response.tool_call)
 
             # If you interrupt the model, it sends a turn_complete.
             # For interruptions to work, we need to stop playback.
@@ -224,7 +240,6 @@ class LiveLoop:
                 self.audio_in_queue = asyncio.Queue()
                 self.out_queue = asyncio.Queue(maxsize=5)
 
-                
                 tg.create_task(self.send_realtime())
                 tg.create_task(self.listen_audio())
                 if self.video_mode == "camera":
@@ -232,8 +247,12 @@ class LiveLoop:
                 elif self.video_mode == "screen":
                     tg.create_task(self.get_screen())
 
-                tg.create_task(self.receive_audio())
-                tg.create_task(self.play_audio())
+                # Choose the appropriate receive function based on response modality
+                if "AUDIO" in self.config.response_modalities:
+                    tg.create_task(self.receive_audio())
+                    tg.create_task(self.play_audio())
+                else:
+                    tg.create_task(self.receive_text())
 
                 if self.initial_message:
                     print(f"Sending initial message: {self.initial_message}")
