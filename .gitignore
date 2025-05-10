@@ -1,6 +1,9 @@
 # Local Notes
 *.txt
 
+# Logs
+conversation_logs/
+
 # Environment and configuration files
 .env
 .venv

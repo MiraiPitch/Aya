@@ -61,8 +61,11 @@ LANG = "en-US"
 VOICE = "Leda"
 # VOICE = "Zephyr"
 
+RESPONSE_MODALITIES = ["AUDIO"]
+# RESPONSE_MODALITIES = ["TEXT"]
+
 CONFIG = types.LiveConnectConfig(
-    response_modalities=["AUDIO"],
+    response_modalities=RESPONSE_MODALITIES,
     tools=tools,
     speech_config=types.SpeechConfig(
         voice_config=types.VoiceConfig(
@@ -87,6 +90,7 @@ MODEL = "models/gemini-2.0-flash-live-001"
 # MODEL = "models/gemini-2.0-flash-live-preview-04-09" # Use with VertexAI
 
 DEFAULT_MODE = "none"  # none, camera, screen
+DEFAULT_AUDIO_SOURCE = "microphone"  # microphone, computer, both
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -103,8 +107,15 @@ if __name__ == "__main__":
         default=INITIAL_MESSAGE,
         help="initial message to send to the AI at the start of the conversation",
     )
+    parser.add_argument(
+        "--audio-source",
+        type=str,
+        default=DEFAULT_AUDIO_SOURCE,
+        help="audio input source to use: microphone, computer, or both",
+        choices=["microphone", "computer", "both"],
+    )
     args = parser.parse_args()
-    
+
     # Create and run the LiveLoop with the appropriate parameters
     client = genai.Client(http_options={"api_version": "v1beta"}, api_key=api_key)
     main = LiveLoop(
@@ -112,6 +123,8 @@ if __name__ == "__main__":
         client=client,
         model=MODEL,
         config=CONFIG,
-        initial_message=args.initial_message
+        initial_message=args.initial_message,
+        audio_source=args.audio_source,
+        record_conversation=True
     )
     asyncio.run(main.run())
