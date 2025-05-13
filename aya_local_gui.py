@@ -4,6 +4,7 @@ import sys
 import tkinter as tk
 from tkinter import ttk, scrolledtext
 from dotenv import load_dotenv
+from PIL import Image, ImageTk  # Added for logo handling
 
 from google import genai
 from google.genai import types
@@ -91,7 +92,7 @@ def write_message_to_gui(message: str) -> dict:
 def write_live_hints(hint: str) -> dict:
     """
     Writes a communication hint to the hints area of the GUI.
-    Use this to provide real-time feedback on how the user could improve their communication style.
+    Use this to provide real-time feedback to the user regarding their communication style.
     
     :param hint: A concise tip or hint about how to speak more naturally or effectively
     :return: Result confirmation
@@ -107,6 +108,19 @@ class AyaGUI:
         self.root.geometry("800x800")
         self.root.state('zoomed')  # Start in full screen mode
         
+        # Load and set the logo
+        logo_path = "MP-logo.png"
+        try:
+            logo_img = Image.open(logo_path)
+            # Resize the logo image to a reasonable size if needed
+            logo_img = logo_img.resize((150, 150), Image.LANCZOS)
+            logo_photo = ImageTk.PhotoImage(logo_img)
+            self.root.iconphoto(True, logo_photo)
+            # Keep a reference to prevent garbage collection
+            self.logo_photo = logo_photo
+        except Exception as e:
+            print(f"Failed to load logo: {e}")
+        
         # Set style
         self.style = ttk.Style()
         self.style.configure("TButton", padding=6, relief="flat")
@@ -115,6 +129,17 @@ class AyaGUI:
         # Configure main frame
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Add logo to the top of the main frame
+        try:
+            # Create a smaller version of the logo for display in the main frame
+            small_logo_img = Image.open(logo_path)
+            small_logo_img = small_logo_img.resize((100, 100), Image.LANCZOS)
+            self.small_logo_photo = ImageTk.PhotoImage(small_logo_img)
+            logo_label = ttk.Label(self.main_frame, image=self.small_logo_photo)
+            logo_label.pack(pady=(0, 10))
+        except:
+            pass
         
         # Live loop instance and task
         self.live_loop = None
@@ -263,6 +288,7 @@ class AyaGUI:
     def inject_write_message_function(self):
         """Inject the actual implementation for the write_message_to_gui function"""
         def _write_message_impl(message):
+            print(f"Message tool called with: '{message}'")
             self.display_message("Aya", message)
             return {"result": f"Message displayed: {message}"}
         
@@ -271,6 +297,7 @@ class AyaGUI:
         
         # Also inject implementation for the write_live_hints function
         def _write_hints_impl(hint):
+            print(f"Hint tool called with: '{hint}")
             self.display_hint(hint)
             return {"result": f"Hint displayed: {hint}"}
         
