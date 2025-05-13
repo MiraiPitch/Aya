@@ -61,8 +61,8 @@ LANG = "en-US"
 VOICE = "Leda"
 # VOICE = "Zephyr"
 
-RESPONSE_MODALITIES = ["AUDIO"]
-# RESPONSE_MODALITIES = ["TEXT"]
+# RESPONSE_MODALITIES = ["AUDIO"]
+RESPONSE_MODALITIES = ["TEXT"]
 
 CONFIG = types.LiveConnectConfig(
     response_modalities=RESPONSE_MODALITIES,
@@ -125,6 +125,6 @@ if __name__ == "__main__":
         config=CONFIG,
         initial_message=args.initial_message,
         audio_source=args.audio_source,
-        record_conversation=True
+        record_conversation=False
     )
     asyncio.run(main.run())

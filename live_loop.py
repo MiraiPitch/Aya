@@ -628,28 +628,48 @@ class LiveLoop:
         """Background task to handle text responses and tool calls."""
         while True:
             turn = self.session.receive()
-            async for response in turn:
-                if text := response.text:
-                    print(text, end="")
+            async for chunk in turn:
+                if chunk.server_content:
+                    if chunk.text is not None:
+                        print(f"\nAya: {chunk.text}", end="")
+
+                    model_turn = chunk.server_content.model_turn
+                    if model_turn:
+                        for part in model_turn.parts:
+                            if part.executable_code is not None:
+                                print(part.executable_code.code)
+
+                            if part.code_execution_result is not None:
+                                print(part.code_execution_result.output)
                 
                 # Handle tool calls
-                if response.tool_call:
-                    await self.handle_tool_calls(response.tool_call)
+                elif chunk.tool_call:
+                    await self.handle_tool_calls(chunk.tool_call)
 
     async def receive_audio(self):
         """Background task to handle audio responses and tool calls."""
         while True:
             turn = self.session.receive()
-            async for response in turn:
-                if data := response.data:
-                    self.audio_in_queue.put_nowait(data)
-                    continue
-                if text := response.text:
-                    print(text, end="")
+            async for chunk in turn:
+                if chunk.server_content:
+                    if chunk.text is not None:
+                        print(f"\nAya: {chunk.text}", end="")
+                    
+                    if chunk.data is not None:
+                        self.audio_in_queue.put_nowait(chunk.data)
+
+                    model_turn = chunk.server_content.model_turn
+                    if model_turn:
+                        for part in model_turn.parts:
+                            if part.executable_code is not None:
+                                print(part.executable_code.code)
+
+                            if part.code_execution_result is not None:
+                                print(part.code_execution_result.output)
                 
                 # Handle tool calls
-                if response.tool_call:
-                    await self.handle_tool_calls(response.tool_call)
+                elif chunk.tool_call:
+                    await self.handle_tool_calls(chunk.tool_call)
 
             # If you interrupt the model, it sends a turn_complete.
             # For interruptions to work, we need to stop playback.
@@ -712,8 +732,10 @@ class LiveLoop:
                 if "AUDIO" in self.config.response_modalities:
                     tg.create_task(self.receive_audio())
                     tg.create_task(self.play_audio())
-                else:
+                elif "TEXT" in self.config.response_modalities:
                     tg.create_task(self.receive_text())
+                else:
+                    raise ValueError("Invalid response modality")
 
                 if self.initial_message:
                     print(f"Sending initial message: {self.initial_message}")
