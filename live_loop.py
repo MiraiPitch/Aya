@@ -86,11 +86,17 @@ class LiveLoop:
         self.function_executor = function_executor or execute_function
         # Audio source can be 'microphone', 'computer', or 'both'
         self.audio_source = audio_source
-        print(f"Audio source: {self.audio_source}")
         # If True, record the conversation to a wav file
         self.record_conversation = record_conversation
         # Optional manual override for system audio device index
         self.system_audio_device_index = system_audio_device_index
+
+        print("--------------------------------")
+        print(f"Audio source: {self.audio_source}")
+        print(f"Video mode: {self.video_mode}")
+        print(f"model: {self.model}")
+        print(f"config: {self.config}")
+        print("--------------------------------")
 
         # Verify audio_source is valid and handle audio loop prevention
         if self.audio_source not in ["microphone", "computer", "both"]:

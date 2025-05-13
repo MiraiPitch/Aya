@@ -64,6 +64,12 @@ VOICES = {
     "Orus (Male)": "Orus"
 }
 
+# Audio source options
+AUDIO_SOURCES = ["microphone", "computer", "both"]
+
+# Video mode options
+VIDEO_MODES = ["none", "camera", "screen"]
+
 # Output modalities
 MODALITIES = ["TEXT", "AUDIO"]
 
@@ -98,7 +104,8 @@ class AyaGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Aya AI Assistant")
-        self.root.geometry("800x600")
+        self.root.geometry("800x800")
+        self.root.state('zoomed')  # Start in full screen mode
         
         # Set style
         self.style = ttk.Style()
@@ -150,13 +157,25 @@ class AyaGUI:
         self.modality_var = tk.StringVar(value=MODALITIES[0])  # Default to TEXT
         modality_combo = ttk.Combobox(config_frame, textvariable=self.modality_var, values=MODALITIES, state="readonly")
         modality_combo.grid(row=3, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # Audio source selection
+        ttk.Label(config_frame, text="Audio Source:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
+        self.audio_source_var = tk.StringVar(value=AUDIO_SOURCES[0])  # Default to microphone
+        audio_source_combo = ttk.Combobox(config_frame, textvariable=self.audio_source_var, values=AUDIO_SOURCES, state="readonly")
+        audio_source_combo.grid(row=4, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # Video mode selection
+        ttk.Label(config_frame, text="Video Mode:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
+        self.video_mode_var = tk.StringVar(value=VIDEO_MODES[0])  # Default to none
+        video_mode_combo = ttk.Combobox(config_frame, textvariable=self.video_mode_var, values=VIDEO_MODES, state="readonly")
+        video_mode_combo.grid(row=5, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Audio input section
         audio_frame = ttk.LabelFrame(config_frame, text="Audio Input")
-        audio_frame.grid(row=4, column=0, columnspan=2, sticky=tk.EW, padx=5, pady=5)
+        audio_frame.grid(row=6, column=0, columnspan=2, sticky=tk.EW, padx=5, pady=5)
         
         # Audio input checkbox 
-        self.use_mic_var = tk.BooleanVar(value=False)
+        self.use_mic_var = tk.BooleanVar(value=True)
         mic_checkbox = ttk.Checkbutton(audio_frame, text="Process Microphone Input", variable=self.use_mic_var)
         mic_checkbox.pack(side=tk.LEFT, padx=5, pady=5)
         
@@ -423,14 +442,14 @@ class AyaGUI:
             self.log_message(mic_info)
             p.terminate()
             
-            # Create LiveLoop instance
+            # Create LiveLoop instance with selected video mode and audio source
             self.live_loop = LiveLoop(
-                video_mode="none",  # No video for now
+                video_mode=self.video_mode_var.get(),  # Use selected video mode
                 client=client,
                 model="models/gemini-2.0-flash-live-001",
                 config=config,
                 initial_message="[CALL_START]",  # Initial greeting
-                audio_source="microphone",  # Always use microphone as the audio source
+                audio_source=self.audio_source_var.get(),  # Use selected audio source
                 record_conversation=False
             )
             
