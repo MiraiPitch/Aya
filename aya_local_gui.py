@@ -28,14 +28,10 @@ You should be concise, clear, and engaging in your responses.
 When appropriate, you can use humor and show personality while maintaining professionalism.
 Always aim to be helpful while respecting user privacy and safety.
 
-IMPORTANT: While you respond normally to the user in the main conversation, you should also provide helpful hints about how the user could speak more naturally and effectively. 
-provide these hints only if the user has said something clearly unnatural or unacceptably.
-Send these hints using the write_live_hints function. 
-These hints should be very concise tips to improve communication style, clarity, or naturalness of speech.
-Prepend the hints with "-----\n"
 
 If the call starts with "[CALL_START]", you should greet the user.
 """
+DEFAULT_SYSTEM_MESSAGE = DEFAULT_SYSTEM_MESSAGE.strip()
 
 # DEFAULT_SYSTEM_MESSAGE = """
 # You are a sales assistant AI participating in a live call. 
@@ -105,8 +101,8 @@ class AyaGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Aya AI Assistant")
-        self.root.geometry("800x800")
-        self.root.state('zoomed')  # Start in full screen mode
+        self.root.geometry("800x900")
+        # self.root.state('zoomed')  # Start in full screen mode
         
         # Load and set the logo
         logo_path = "MP-logo.png"
@@ -451,12 +447,7 @@ class AyaGUI:
             process_mic = self.use_mic_var.get()
             self.root.after(0, lambda: self.update_mic_status(process_mic))
             
-            # Always initialize microphone, but let user know if we're processing it
             self.log_message("Initializing microphone...")
-            if process_mic:
-                self.log_message("Microphone audio will be processed in the conversation.")
-            else:
-                self.log_message("Microphone is enabled but audio will not be processed in the conversation.")
                 
             # List available audio devices for debugging
             import pyaudio
@@ -537,39 +528,25 @@ class AyaGUI:
                 # Replace the listen_audio method when mic processing is disabled
                 self.live_loop.listen_audio = custom_listen_audio
             
-            # Also replace the receive_text method to output to our GUI
-            original_receive_text = self.live_loop.receive_text
+            # Replace the output_text method in LiveLoop to display in GUI instead of console
+            # We need to maintain text accumulation to display in sensible chunks
+            accumulated_text = [""]  # Using a list for mutable state in the closure
             
-            async def custom_receive_text():
-                """Modified receive_text to display in GUI instead of console"""
-                # Update connection status
-                self.root.after(0, lambda: self.update_connection_status(True))
-                
-                while True:
-                    turn = self.live_loop.session.receive()
-                    accumulated_text = ""
-                    
-                    async for response in turn:
-                        if text := response.text:
-                            # Accumulate text - we'll display it in chunks
-                            accumulated_text += text
-                            if text.endswith(("\n", ".", "!", "?")) or len(accumulated_text) > 100:
-                                # Display accumulated text and reset
-                                self.root.after(0, lambda t=accumulated_text: 
-                                               self.display_message("Aya", t))
-                                accumulated_text = ""
-                        
-                        # Handle tool calls
-                        if response.tool_call:
-                            await self.live_loop.handle_tool_calls(response.tool_call)
-                    
-                    # Display any remaining text
-                    if accumulated_text:
-                        self.root.after(0, lambda t=accumulated_text: 
-                                       self.display_message("Aya", t))
+            def custom_output_text(text):
+                accumulated_text[0] += text
+                if text.endswith(("\n", ".", "!", "?")) or len(accumulated_text[0]) > 100:
+                    # Display accumulated text and reset when we have a natural break
+                    self.root.after(0, lambda t=accumulated_text[0]: self.display_message("Aya", t))
+                    accumulated_text[0] = ""
+                # If no natural break but we still have text, display it anyway
+                elif accumulated_text[0]:
+                    self.root.after(0, lambda t=accumulated_text[0]: self.display_message("Aya", t))
             
-            # Replace the receive_text method
-            self.live_loop.receive_text = custom_receive_text
+            # Replace the original output_text method
+            self.live_loop.output_text = custom_output_text
+            
+            # Update connection status
+            self.root.after(0, lambda: self.update_connection_status(True))
             
             # Start the LiveLoop
             try:

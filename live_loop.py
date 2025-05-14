@@ -613,6 +613,11 @@ class LiveLoop:
         for fc in tool_calls.function_calls:
             # Execute the function using the provided executor
             result = self.function_executor(fc.name, fc.args)
+
+            print(50*"=")
+            print(f"Function call: {fc.name}({fc.args})")
+            print(f"Function result: {result}")
+            print(50*"=")
             
             function_response = types.FunctionResponse(
                 id=fc.id,
@@ -624,6 +629,10 @@ class LiveLoop:
         # Send all function responses back to the model
         await self.session.send_tool_response(function_responses=function_responses)
 
+    def output_text(self, text):
+        # Can be overridden to output text elsewhere, e.g. to a GUI
+        print(text, end="")
+
     async def receive_text(self):
         """Background task to handle text responses and tool calls."""
         while True:
@@ -631,7 +640,7 @@ class LiveLoop:
             async for chunk in turn:
                 if chunk.server_content:
                     if chunk.text is not None:
-                        print(f"\nAya: {chunk.text}", end="")
+                        self.output_text(chunk.text)
 
                     model_turn = chunk.server_content.model_turn
                     if model_turn:
@@ -653,7 +662,7 @@ class LiveLoop:
             async for chunk in turn:
                 if chunk.server_content:
                     if chunk.text is not None:
-                        print(f"\nAya: {chunk.text}", end="")
+                        self.output_text(chunk.text)
                     
                     if chunk.data is not None:
                         self.audio_in_queue.put_nowait(chunk.data)
