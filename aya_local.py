@@ -90,7 +90,7 @@ MODEL = "models/gemini-2.0-flash-live-001"
 # MODEL = "models/gemini-2.0-flash-live-preview-04-09" # Use with VertexAI
 
 DEFAULT_MODE = "none"  # none, camera, screen
-DEFAULT_AUDIO_SOURCE = "microphone"  # microphone, computer, both
+DEFAULT_AUDIO_SOURCE = "microphone"  # none, microphone, computer, both
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -111,8 +111,8 @@ if __name__ == "__main__":
         "--audio-source",
         type=str,
         default=DEFAULT_AUDIO_SOURCE,
-        help="audio input source to use: microphone, computer, or both",
-        choices=["microphone", "computer", "both"],
+        help="audio input source to use: none, microphone, computer, or both",
+        choices=["none", "microphone", "computer", "both"],
     )
     args = parser.parse_args()
 

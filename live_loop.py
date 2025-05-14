@@ -1,25 +1,6 @@
 """
 Module containing the LiveLoop class for handling real-time audio/video communication
 with the Gemini Live API.
-
-Example usage:
-    # Using default microphone only
-    python aya_local.py
-    
-    # Using computer audio only (Stereo Mix)
-    python aya_local.py --audio-source computer
-    
-    # Using both microphone and computer audio mixed together
-    python aya_local.py --audio-source both
-    
-    # Using a specific audio device by index (for when auto-detection fails)
-    # Replace 32 with the index of your Stereo Mix device from the list
-    python aya_local.py --audio-source computer --system-audio-device 32
-    
-    # For Windows users having issues with Stereo Mix:
-    # - Try using the WDM-KS version (look for "Stereo Mix" under "Windows WDM-KS" in the device list)
-    # - Enable Stereo Mix in Windows sound settings if not showing up
-    # - If all else fails, try a virtual audio cable program like VB-Cable
 """
 
 import asyncio
@@ -99,8 +80,8 @@ class LiveLoop:
         print("--------------------------------")
 
         # Verify audio_source is valid and handle audio loop prevention
-        if self.audio_source not in ["microphone", "computer", "both"]:
-            raise ValueError("audio_source must be 'microphone', 'computer', or 'both'")
+        if self.audio_source not in ["none", "microphone", "computer", "both"]:
+            raise ValueError("audio_source must be 'none', 'microphone', 'computer', or 'both'")
         
         # Check for potential audio loop if using computer audio and audio output
         if self.audio_source in ["computer", "both"] and "AUDIO" in self.config.response_modalities:
@@ -731,13 +712,18 @@ class LiveLoop:
                 self.out_queue = asyncio.Queue(maxsize=5)
 
                 tg.create_task(self.send_realtime())
-                tg.create_task(self.listen_audio())
+
+                # MODEL AUDIO INPUT
+                if self.audio_source != "none":
+                    tg.create_task(self.listen_audio())
+
+                # MODEL VIDEO INPUT
                 if self.video_mode == "camera":
                     tg.create_task(self.get_frames())
                 elif self.video_mode == "screen":
                     tg.create_task(self.get_screen())
 
-                # Choose the appropriate receive function based on response modality
+                # MODEL OUTPUT
                 if "AUDIO" in self.config.response_modalities:
                     tg.create_task(self.receive_audio())
                     tg.create_task(self.play_audio())
