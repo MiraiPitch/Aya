@@ -27,7 +27,14 @@ api_key = os.getenv(API_KEY_ENV_VAR)
 # Default languages and voices
 LANGUAGES = {
     "English (US)": "en-US",
+    "English (UK)": "en-GB",
     "German (DE)": "de-DE",
+    "French (FR)": "fr-FR",
+    "Spanish (ES)": "es-ES",
+    "Italian (IT)": "it-IT",
+    "Japanese (JP)": "ja-JP",
+    "Korean (KR)": "ko-KR",
+    "Chinese (CN)": "cmn-CN",
 }
 
 # Voice options
@@ -94,6 +101,13 @@ class AyaGUI:
         # System prompts storage
         self.system_prompts = {}  # Will be populated by refresh_system_prompts
         self.selected_prompt_path = "system_prompts/default/aya_default_gui.txt"  # Default prompt path
+        
+        # Store configuration settings
+        self.config_language = "English (US)"
+        self.config_voice = "Leda (Female)"
+        self.config_response_modality = MODALITIES[0] # "TEXT"
+        self.config_audio_source = AUDIO_SOURCES[1]  # "microphone"
+        self.config_video_mode = VIDEO_MODES[0]  # "none"
         
         # Set dark theme colors
         self.bg_color = "#464646"  # Dark background
@@ -189,7 +203,7 @@ class AyaGUI:
                 self.prompt_var.set(self.system_prompts[0])
         
         # Bind selection change event
-        self.prompt_var.trace('w', self.on_prompt_selected)
+        self.prompt_var.trace_add('write', self.on_prompt_selected)
         
         # Refresh button
         refresh_button = ttk.Button(prompt_frame, text="↻", width=3, command=self.refresh_system_prompts)
@@ -206,33 +220,40 @@ class AyaGUI:
         
         # Language selection
         ttk.Label(config_frame, text="Language:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
-        self.language_var = tk.StringVar(value=list(LANGUAGES.keys())[0])
+        self.language_var = tk.StringVar(value=self.config_language)
         language_combo = ttk.Combobox(config_frame, textvariable=self.language_var, values=list(LANGUAGES.keys()), state="readonly", font=self.config_font)
         language_combo.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Voice selection
         ttk.Label(config_frame, text="Voice:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
-        self.voice_var = tk.StringVar(value=list(VOICES.keys())[0])
+        self.voice_var = tk.StringVar(value=self.config_voice)
         voice_combo = ttk.Combobox(config_frame, textvariable=self.voice_var, values=list(VOICES.keys()), state="readonly", font=self.config_font)
         voice_combo.grid(row=3, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Response modality
         ttk.Label(config_frame, text="Response Type:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
-        self.modality_var = tk.StringVar(value=MODALITIES[0])  # Default to TEXT
+        self.modality_var = tk.StringVar(value=self.config_response_modality)
         modality_combo = ttk.Combobox(config_frame, textvariable=self.modality_var, values=MODALITIES, state="readonly", font=self.config_font)
         modality_combo.grid(row=4, column=1, sticky=tk.W, padx=5, pady=5)
 
         # Audio source selection
         ttk.Label(config_frame, text="Audio Source:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
-        self.audio_source_var = tk.StringVar(value=AUDIO_SOURCES[1])  # Default to microphone
+        self.audio_source_var = tk.StringVar(value=self.config_audio_source)
         audio_source_combo = ttk.Combobox(config_frame, textvariable=self.audio_source_var, values=AUDIO_SOURCES, state="readonly", font=self.config_font)
         audio_source_combo.grid(row=5, column=1, sticky=tk.W, padx=5, pady=5)
 
         # Video mode selection
         ttk.Label(config_frame, text="Video Mode:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=5)
-        self.video_mode_var = tk.StringVar(value=VIDEO_MODES[0])  # Default to none
+        self.video_mode_var = tk.StringVar(value=self.config_video_mode)
         video_mode_combo = ttk.Combobox(config_frame, textvariable=self.video_mode_var, values=VIDEO_MODES, state="readonly", font=self.config_font)
         video_mode_combo.grid(row=6, column=1, sticky=tk.W, padx=5, pady=5)
+
+        # Bind change events to update config
+        self.language_var.trace_add('write', lambda *args: self.update_config_from_ui())
+        self.voice_var.trace_add('write', lambda *args: self.update_config_from_ui())
+        self.modality_var.trace_add('write', lambda *args: self.update_config_from_ui())
+        self.audio_source_var.trace_add('write', lambda *args: self.update_config_from_ui())
+        self.video_mode_var.trace_add('write', lambda *args: self.update_config_from_ui())
         
         # Configure grid columns
         config_frame.columnconfigure(1, weight=1)
@@ -309,15 +330,6 @@ class AyaGUI:
         # Control buttons frame
         control_frame = ttk.Frame(self.main_frame)
         control_frame.pack(fill=tk.X, padx=5, pady=10)
-        
-        # Start/Stop toggle button
-        button_text = "Stop Conversation" if self.live_loop else "Start Conversation"
-        self.start_stop_button = ttk.Button(
-            control_frame, 
-            text=button_text, 
-            command=self.toggle_conversation
-        )
-        self.start_stop_button.pack(side=tk.LEFT, padx=5)
         
         # Clear buttons
         clear_all_button = ttk.Button(control_frame, text="Clear All", command=self.clear_all)
@@ -432,22 +444,29 @@ class AyaGUI:
     
     def create_config(self):
         """Create a Gemini config using the current settings"""
-        # If in debug mode, use the values from the UI
+        # Get system message
         if self.debug_mode and hasattr(self, 'system_message'):
             system_message = self.system_message.get("1.0", tk.END).strip()
+            
+            # Update stored config when in debug mode
+            self.update_config_from_ui()
+            
+            # Get settings from UI
             language_code = LANGUAGES[self.language_var.get()]
             voice_name = VOICES[self.voice_var.get()]
             response_modalities = [self.modality_var.get()]
             audio_source = self.audio_source_var.get()
             video_mode = self.video_mode_var.get()
         else:
-            # In minimalist mode, use selected prompt but default values for other settings
+            # In minimalist mode, use selected prompt but persisted settings
             system_message = load_system_message(self.selected_prompt_path)
-            language_code = LANGUAGES[list(LANGUAGES.keys())[0]]  # First language
-            voice_name = VOICES[list(VOICES.keys())[0]]  # First voice
-            response_modalities = ["TEXT"]
-            audio_source = AUDIO_SOURCES[1]  # Default to microphone
-            video_mode = VIDEO_MODES[0]  # Default to none
+            
+            # Use persisted config settings
+            language_code = LANGUAGES[self.config_language]
+            voice_name = VOICES[self.config_voice]
+            response_modalities = [self.config_response_modality]
+            audio_source = self.config_audio_source
+            video_mode = self.config_video_mode
         
         # Configure tools
         search_tool = {'google_search': {}}
@@ -520,7 +539,7 @@ class AyaGUI:
         self.message_content += text
         
         # Only display in the message area in debug mode
-        if hasattr(self, 'message_area'):
+        if hasattr(self, 'message_area') and self.message_area.winfo_exists():
             self.message_area.config(state=tk.NORMAL)
             self.message_area.insert(tk.END, text)
             self.message_area.see(tk.END)
@@ -536,12 +555,12 @@ class AyaGUI:
         
     def update_connection_status(self, is_connected):
         """Update the connection status indicator"""
-        if hasattr(self, 'mic_status_var'):
+        if hasattr(self, 'connection_status_var') and hasattr(self, 'mic_status_var'):
             self.connection_status_var.set(f"Connection: {'Connected' if is_connected else 'Disconnected'}")
-        else:
+        elif hasattr(self, 'connection_status_var'):
             # In minimalist mode, we have a simpler status display
             self.connection_status_var.set(f"Status: {'Active' if is_connected else 'Disconnected'}")
-        
+    
     async def create_and_run_live_loop(self):
         """Create and run a LiveLoop instance"""
         try:
@@ -607,9 +626,9 @@ class AyaGUI:
                 accumulated_text[0] += text
                 
                 # Check if we have a natural break or enough accumulated text
-                if text.endswith(("\n", ".", "!", "?")) or len(accumulated_text[0]) > 100:
+                if text.endswith(("\n")) or len(accumulated_text[0]) > 300:
                     # Store text in message_content regardless of UI mode
-                    display_text = accumulated_text[0]
+                    display_text = f"Aya: {accumulated_text[0]}\n"
                     self.message_content += display_text
                     
                     # Display in UI if in debug mode
@@ -758,7 +777,7 @@ class AyaGUI:
                 self.mini_prompt_var.set(self.system_prompts[0])
         
         # Bind selection change event
-        self.mini_prompt_var.trace('w', self.on_mini_prompt_selected)
+        self.mini_prompt_var.trace_add('write', self.on_mini_prompt_selected)
         
         # Refresh button
         refresh_button = ttk.Button(prompt_frame, text="↻", width=3, command=self.refresh_system_prompts)
@@ -795,10 +814,20 @@ class AyaGUI:
         for widget in self.main_frame.winfo_children():
             widget.destroy()
         
-        # Add close debug button at the top
+        # Add control frame at the top with buttons
         control_frame = ttk.Frame(self.main_frame)
         control_frame.pack(fill=tk.X, padx=5, pady=5)
         
+        # Start/Stop button
+        button_text = "Stop Conversation" if self.live_loop else "Start Conversation"
+        self.start_stop_button = ttk.Button(
+            control_frame, 
+            text=button_text, 
+            command=self.toggle_conversation
+        )
+        self.start_stop_button.pack(side=tk.LEFT, padx=5, pady=5)
+        
+        # Close settings button at the top right
         close_debug_button = ttk.Button(
             control_frame, 
             text="Close Settings", 
@@ -857,7 +886,7 @@ class AyaGUI:
 
     def _update_message_area(self, text):
         """Update the message area directly without adding to message_content"""
-        if hasattr(self, 'message_area'):
+        if hasattr(self, 'message_area') and self.message_area.winfo_exists():
             self.message_area.config(state=tk.NORMAL)
             self.message_area.insert(tk.END, text)
             self.message_area.see(tk.END)
@@ -946,6 +975,20 @@ class AyaGUI:
                 # Get path and store
                 path = self.prompt_paths[selected]
                 self.selected_prompt_path = path
+
+    # Add method to update configuration when settings change in debug mode
+    def update_config_from_ui(self):
+        """Update configuration settings from UI selections"""
+        if hasattr(self, 'language_var'):
+            self.config_language = self.language_var.get()
+        if hasattr(self, 'voice_var'):
+            self.config_voice = self.voice_var.get()
+        if hasattr(self, 'modality_var'):
+            self.config_response_modality = self.modality_var.get()
+        if hasattr(self, 'audio_source_var'):
+            self.config_audio_source = self.audio_source_var.get()
+        if hasattr(self, 'video_mode_var'):
+            self.config_video_mode = self.video_mode_var.get()
 
 def main():
     # Create the Tkinter root with themed support
