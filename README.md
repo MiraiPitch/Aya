@@ -1,4 +1,3 @@
-
 <h1 align="center">Aya: Run your own AI voice assistant</h1>
 
 
@@ -71,6 +70,18 @@ python aya_local.py --list-prompts
 python aya_local.py --initial-message "Your message here"
 ```
 
+## Screenshots
+
+### Debug Mode
+<img src="images/aya-debug.png" alt="Aya Debug Mode" width="600">
+
+You can change all settings and see all messages in the debug mode.
+
+### Minimalist Mode
+<img src="images/aya-mini.png" alt="Aya Minimalist Mode" width="300">
+
+Minimalist mode is more compact. It is useful for example to getting feedback from the AI during a sales call with another person.
+
 ### GUI Version (aya_local_gui.py)
 
 For a more user-friendly interface with additional features:
@@ -104,10 +115,35 @@ To implement your own custom tools:
     Note: You can specify more information by explicitly passing inputs to the decorator. An example is provided in the file. Refer to the [Gemini Function Calling Documentation](https://ai.google.dev/gemini-api/docs/function-calling?example=meeting#step_1_define_function_declaration) for more details.
 3. Include your functions in the available_tools list
 
+## Included System Prompts
+
+Our default system prompts are stored in the `system_prompts/default` folder.
+
+Available system prompts:
+- **aya_default** - Default prompt for CLI version
+- **aya_default_gui** - Default prompt for GUI version
+- **sales_assistant** - Assistant specialized for giving tips during a sales call with a customer (should be used to only output text to the live hints tool)
+- **slides_improvement_assistant** - Assistant for improving presentation slides (should be used with screen capture)
+- **ui_improvement_assistant.txt** - Assistant for UI/UX improvements (should be used with screen capture)
+
+You can add your own system prompts to any subfolder of the `system_prompts` folder.
+
 ## Notes
 
 Aya uses the [Gemini Live API](https://ai.google.dev/gemini-api/docs/live), which provides multimodal capabilities allowing the AI to process multiple input streams simultaneously to create an interactive assistant.
-The Live API is still in preview and has some limitations
+The Live API is still in preview and has some limitations.
+
+
+## Roadmap
+
+Future development plans for Aya include:
+
+Fixes and improvements:
+- [ ] Fix issues with computer audio output capture on different operating systems
+- [ ] Add alternative Electron UI and package
+
+Features:
+- [ ] Add direct integrations into web browser meetings
 
 ## Remove conda environment
 
