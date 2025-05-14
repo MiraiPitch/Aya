@@ -1,6 +1,12 @@
 # Local Notes
 *.txt
 
+# Don't ignore system prompt files
+!system_prompts/**
+
+# Logs
+conversation_logs/
+
 # Environment and configuration files
 .env
 .venv
