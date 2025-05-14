@@ -15,6 +15,7 @@ from google.genai import types
 # Local imports
 from live_loop import LiveLoop
 from function_registry import get_declarations_for_functions
+from utils import load_system_message, list_system_messages
 
 # Import specific tool functions we want to use
 from gemini_tools import print_to_console
@@ -25,13 +26,7 @@ API_KEY_ENV_VAR = "GEMINI_API_KEY"
 api_key = os.getenv(API_KEY_ENV_VAR)
 
 # System message for Gemini Live API
-SYSTEM_MESSAGE = """
-You are Aya, an AI assistant with a friendly and helpful personality. 
-You should be concise, clear, and engaging in your responses. 
-When appropriate, you can use humor and show personality while maintaining professionalism.
-Always aim to be helpful while respecting user privacy and safety.
-If the call starts with "[CALL_START]", you should greet the user.
-"""
+SYSTEM_MESSAGE_PATH = "system_prompts/default/aya_default.txt"
 
 # Initial user message (optional)
 # INITIAL_MESSAGE = None
@@ -64,25 +59,6 @@ VOICE = "Leda"
 # RESPONSE_MODALITIES = ["AUDIO"]
 RESPONSE_MODALITIES = ["TEXT"]
 
-CONFIG = types.LiveConnectConfig(
-    response_modalities=RESPONSE_MODALITIES,
-    tools=tools,
-    speech_config=types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE)
-        ),
-        language_code=LANG,
-    ),
-    context_window_compression=(
-        # Configures compression with default parameters.
-        types.ContextWindowCompressionConfig(
-            sliding_window=types.SlidingWindow(),
-        )
-    ),
-    system_instruction=types.Content(
-        parts=[types.Part(text=SYSTEM_MESSAGE)]
-    ),
-)
 # CONFIG = {"response_modalities": ["AUDIO"], "tools": [search_tool]}
 # CONFIG = {"response_modalities": ["AUDIO"]}
 
@@ -114,8 +90,50 @@ if __name__ == "__main__":
         help="audio input source to use: none, microphone, computer, or both",
         choices=["none", "microphone", "computer", "both"],
     )
+    parser.add_argument(
+        "--system-prompt",
+        type=str,
+        default=SYSTEM_MESSAGE_PATH,
+        help="path to system prompt file to use",
+    )
+    parser.add_argument(
+        "--list-prompts",
+        action="store_true",
+        help="list all available system prompts",
+    )
     args = parser.parse_args()
 
+    # List available system prompts if requested
+    if args.list_prompts:
+        prompts = list_system_messages()
+        print("Available system prompts:")
+        for category, files in prompts.items():
+            print(f"\t{category}:")
+            for file in files:
+                print(f"\t\t{os.path.basename(file)}")
+        exit(0)
+
+    system_message = load_system_message(args.system_prompt)
+
+    CONFIG = types.LiveConnectConfig(
+        response_modalities=RESPONSE_MODALITIES,
+        tools=tools,
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=VOICE)
+            ),
+            language_code=LANG,
+        ),
+        context_window_compression=(
+            # Configures compression with default parameters.
+            types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            )
+        ),
+        system_instruction=types.Content(
+            parts=[types.Part(text=system_message)]
+        ),
+    ) 
     # Create and run the LiveLoop with the appropriate parameters
     client = genai.Client(http_options={"api_version": "v1beta"}, api_key=api_key)
     main = LiveLoop(

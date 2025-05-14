@@ -13,6 +13,7 @@ from google.genai import types
 # Local imports
 from live_loop import LiveLoop
 from function_registry import FunctionRegistry, get_declarations_for_functions
+from utils import load_system_message, list_system_messages
 
 # Import tool functions for the GUI
 from gemini_tools import print_to_console
@@ -22,33 +23,11 @@ load_dotenv()
 API_KEY_ENV_VAR = "GEMINI_API_KEY"
 api_key = os.getenv(API_KEY_ENV_VAR)
 
-# Default system message
-DEFAULT_SYSTEM_MESSAGE = """
-You are Aya, an AI assistant with a friendly and helpful personality. 
-You should be concise, clear, and engaging in your responses. 
-When appropriate, you can use humor and show personality while maintaining professionalism.
-Always aim to be helpful while respecting user privacy and safety.
-
-
-If the call starts with "[CALL_START]", you should greet the user.
-"""
-DEFAULT_SYSTEM_MESSAGE = DEFAULT_SYSTEM_MESSAGE.strip()
-
-# DEFAULT_SYSTEM_MESSAGE = """
-# You are a sales assistant AI participating in a live call. 
-# Your role is to listen and provide short, impactful keyword-based advice to help the speaker improve their sales technique.
-# Write this advice directly to the console—do not speak or interrupt the call.
-# Keep your messages concise, action-oriented, and professional. Use keywords or short phrases (e.g., "Build rapport", "Ask open-ended question", "Handle objection").
-# Do not provide full sentences unless necessary for clarity.
-# If the call starts with "[CALL_START]", begin monitoring silently.
-# Always aim to support better performance without disrupting the conversation.
-# """
 
 # Default languages and voices
 LANGUAGES = {
     "English (US)": "en-US",
-    "German": "de-DE",
-    # Add more languages as needed
+    "German (DE)": "de-DE",
 }
 
 # Voice options
@@ -112,6 +91,10 @@ class AyaGUI:
         self.message_content = ""
         self.hints_content = ""
         
+        # System prompts storage
+        self.system_prompts = {}  # Will be populated by refresh_system_prompts
+        self.selected_prompt_path = "system_prompts/default/aya_default_gui.txt"  # Default prompt path
+        
         # Set dark theme colors
         self.bg_color = "#464646"  # Dark background
         self.fg_color = "white"    # Light text
@@ -124,6 +107,9 @@ class AyaGUI:
         self.message_font = (None, 11)
         self.hint_font_debug = (None, 11)
         self.hint_font_mini = (None, 18)
+        
+        # Load system prompts
+        self.refresh_system_prompts()
         
         # Load and set the logo
         logo_path = "MP-logo.png"
@@ -177,42 +163,76 @@ class AyaGUI:
         config_frame = ttk.LabelFrame(self.main_frame, text="Configuration")
         config_frame.pack(fill=tk.X, padx=5, pady=5)
         
-        # System message
-        ttk.Label(config_frame, text="System Message:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+        # System prompt selection
+        prompt_frame = ttk.Frame(config_frame)
+        prompt_frame.grid(row=0, column=0, columnspan=2, sticky=tk.EW, padx=5, pady=5)
+        
+        ttk.Label(prompt_frame, text="System Prompt:").pack(side=tk.LEFT, padx=5)
+        
+        # Prompt selection dropdown
+        self.prompt_var = tk.StringVar()
+        self.prompt_combo = ttk.Combobox(prompt_frame, textvariable=self.prompt_var, values=self.system_prompts, state="readonly", font=self.config_font, width=40)
+        self.prompt_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
+        
+        # Set initial value if available
+        if self.system_prompts:
+            # Find current prompt in the list
+            current_prompt = None
+            for display_name, path in self.prompt_paths.items():
+                if path == self.selected_prompt_path:
+                    current_prompt = display_name
+                    break
+            
+            if current_prompt and current_prompt in self.system_prompts:
+                self.prompt_var.set(current_prompt)
+            else:
+                self.prompt_var.set(self.system_prompts[0])
+        
+        # Bind selection change event
+        self.prompt_var.trace('w', self.on_prompt_selected)
+        
+        # Refresh button
+        refresh_button = ttk.Button(prompt_frame, text="↻", width=3, command=self.refresh_system_prompts)
+        refresh_button.pack(side=tk.RIGHT, padx=5)
+        
+        # System message text area - remove label and make textarea span full width
         self.system_message = scrolledtext.ScrolledText(config_frame, height=4, width=70, wrap=tk.WORD, font=self.config_font)
-        self.system_message.grid(row=0, column=1, sticky=tk.EW, padx=5, pady=5)
-        self.system_message.insert(tk.END, DEFAULT_SYSTEM_MESSAGE)
+        self.system_message.grid(row=1, column=0, columnspan=2, sticky=tk.EW, padx=5, pady=5)
+        
+        # Load selected system message
+        system_msg = load_system_message(self.selected_prompt_path)
+        self.system_message.insert(tk.END, system_msg)
         self.system_message.config(bg=self.text_bg, fg=self.text_fg)  # Apply dark theme to system message
         
         # Language selection
-        ttk.Label(config_frame, text="Language:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(config_frame, text="Language:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.language_var = tk.StringVar(value=list(LANGUAGES.keys())[0])
         language_combo = ttk.Combobox(config_frame, textvariable=self.language_var, values=list(LANGUAGES.keys()), state="readonly", font=self.config_font)
-        language_combo.grid(row=1, column=1, sticky=tk.W, padx=5, pady=5)
+        language_combo.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Voice selection
-        ttk.Label(config_frame, text="Voice:").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(config_frame, text="Voice:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
         self.voice_var = tk.StringVar(value=list(VOICES.keys())[0])
         voice_combo = ttk.Combobox(config_frame, textvariable=self.voice_var, values=list(VOICES.keys()), state="readonly", font=self.config_font)
-        voice_combo.grid(row=2, column=1, sticky=tk.W, padx=5, pady=5)
+        voice_combo.grid(row=3, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Response modality
-        ttk.Label(config_frame, text="Response Type:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(config_frame, text="Response Type:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
         self.modality_var = tk.StringVar(value=MODALITIES[0])  # Default to TEXT
         modality_combo = ttk.Combobox(config_frame, textvariable=self.modality_var, values=MODALITIES, state="readonly", font=self.config_font)
-        modality_combo.grid(row=3, column=1, sticky=tk.W, padx=5, pady=5)
+        modality_combo.grid(row=4, column=1, sticky=tk.W, padx=5, pady=5)
 
         # Audio source selection
-        ttk.Label(config_frame, text="Audio Source:").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
-        self.audio_source_var = tk.StringVar(value=AUDIO_SOURCES[0])  # Default to none
+        ttk.Label(config_frame, text="Audio Source:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
+        self.audio_source_var = tk.StringVar(value=AUDIO_SOURCES[1])  # Default to microphone
         audio_source_combo = ttk.Combobox(config_frame, textvariable=self.audio_source_var, values=AUDIO_SOURCES, state="readonly", font=self.config_font)
-        audio_source_combo.grid(row=4, column=1, sticky=tk.W, padx=5, pady=5)
+        audio_source_combo.grid(row=5, column=1, sticky=tk.W, padx=5, pady=5)
 
         # Video mode selection
-        ttk.Label(config_frame, text="Video Mode:").grid(row=5, column=0, sticky=tk.W, padx=5, pady=5)
+        ttk.Label(config_frame, text="Video Mode:").grid(row=6, column=0, sticky=tk.W, padx=5, pady=5)
         self.video_mode_var = tk.StringVar(value=VIDEO_MODES[0])  # Default to none
         video_mode_combo = ttk.Combobox(config_frame, textvariable=self.video_mode_var, values=VIDEO_MODES, state="readonly", font=self.config_font)
-        video_mode_combo.grid(row=5, column=1, sticky=tk.W, padx=5, pady=5)
+        video_mode_combo.grid(row=6, column=1, sticky=tk.W, padx=5, pady=5)
         
         # Configure grid columns
         config_frame.columnconfigure(1, weight=1)
@@ -421,12 +441,12 @@ class AyaGUI:
             audio_source = self.audio_source_var.get()
             video_mode = self.video_mode_var.get()
         else:
-            # In minimalist mode, use default values
-            system_message = DEFAULT_SYSTEM_MESSAGE
+            # In minimalist mode, use selected prompt but default values for other settings
+            system_message = load_system_message(self.selected_prompt_path)
             language_code = LANGUAGES[list(LANGUAGES.keys())[0]]  # First language
             voice_name = VOICES[list(VOICES.keys())[0]]  # First voice
             response_modalities = ["TEXT"]
-            audio_source = AUDIO_SOURCES[0]  # Default to none
+            audio_source = AUDIO_SOURCES[1]  # Default to microphone
             video_mode = VIDEO_MODES[0]  # Default to none
         
         # Configure tools
@@ -712,6 +732,38 @@ class AyaGUI:
         )
         debug_button.pack(side=tk.RIGHT, padx=2, pady=2)
         
+        # Add system prompt selection in minimal UI
+        prompt_frame = ttk.Frame(self.main_frame, borderwidth=0)
+        prompt_frame.pack(fill=tk.X, padx=2, pady=2)
+        
+        ttk.Label(prompt_frame, text="Prompt:").pack(side=tk.LEFT, padx=2)
+        
+        # Prompt selection dropdown
+        self.mini_prompt_var = tk.StringVar()
+        self.mini_prompt_combo = ttk.Combobox(prompt_frame, textvariable=self.mini_prompt_var, values=self.system_prompts, state="readonly", font=self.config_font, width=30)
+        self.mini_prompt_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
+        
+        # Set initial value if available
+        if self.system_prompts:
+            # Find current prompt in the list
+            current_prompt = None
+            for display_name, path in self.prompt_paths.items():
+                if path == self.selected_prompt_path:
+                    current_prompt = display_name
+                    break
+            
+            if current_prompt and current_prompt in self.system_prompts:
+                self.mini_prompt_var.set(current_prompt)
+            else:
+                self.mini_prompt_var.set(self.system_prompts[0])
+        
+        # Bind selection change event
+        self.mini_prompt_var.trace('w', self.on_mini_prompt_selected)
+        
+        # Refresh button
+        refresh_button = ttk.Button(prompt_frame, text="↻", width=3, command=self.refresh_system_prompts)
+        refresh_button.pack(side=tk.RIGHT, padx=2)
+        
         # Hints display area (main content in minimalist mode)
         hint_frame = ttk.LabelFrame(self.main_frame, text="Communication Hints", borderwidth=1)
         hint_frame.pack(fill=tk.BOTH, expand=True, padx=2, pady=2)
@@ -810,6 +862,90 @@ class AyaGUI:
             self.message_area.insert(tk.END, text)
             self.message_area.see(tk.END)
             self.message_area.config(state=tk.DISABLED)
+
+    # New method to refresh system prompts
+    def refresh_system_prompts(self):
+        """Refresh the list of available system prompts"""
+        # Get available system prompts
+        prompt_dict = list_system_messages()
+        
+        # Clear existing system prompts
+        self.system_prompts = {}
+        
+        # Process prompts for the dropdown
+        formatted_prompts = []
+        prompt_paths = {}
+        
+        for category, prompts in prompt_dict.items():
+            for prompt_path in prompts:
+                # Get filename without extension
+                filename = os.path.basename(prompt_path)
+                name, _ = os.path.splitext(filename)
+                
+                # Format display name
+                display_name = f"{name} ({category})"
+                
+                # Add to formatted prompts list
+                formatted_prompts.append(display_name)
+                
+                # Store path mapping
+                prompt_paths[display_name] = prompt_path
+        
+        # Sort prompts alphabetically
+        formatted_prompts.sort()
+        
+        # Store in instance variables
+        self.system_prompts = formatted_prompts
+        self.prompt_paths = prompt_paths
+        
+        # Update dropdown in both UIs if they exist
+        if hasattr(self, 'prompt_var') and hasattr(self, 'prompt_combo'):
+            current_val = self.prompt_var.get()
+            self.prompt_combo['values'] = self.system_prompts
+            
+            # Try to maintain selection or set to first value
+            if current_val in self.system_prompts:
+                self.prompt_var.set(current_val)
+            elif self.system_prompts:
+                self.prompt_var.set(self.system_prompts[0])
+        
+        if hasattr(self, 'mini_prompt_var') and hasattr(self, 'mini_prompt_combo'):
+            current_val = self.mini_prompt_var.get()
+            self.mini_prompt_combo['values'] = self.system_prompts
+            
+            # Try to maintain selection or set to first value
+            if current_val in self.system_prompts:
+                self.mini_prompt_var.set(current_val)
+            elif self.system_prompts:
+                self.mini_prompt_var.set(self.system_prompts[0])
+    
+    # Method to handle prompt selection change
+    def on_prompt_selected(self, *args):
+        """Handle prompt selection change in debug mode"""
+        if hasattr(self, 'prompt_var'):
+            selected = self.prompt_var.get()
+            if selected in self.prompt_paths:
+                # Get path
+                path = self.prompt_paths[selected]
+                self.selected_prompt_path = path
+                
+                # Load and display system message
+                system_msg = load_system_message(path)
+                
+                # Update message text if text area exists
+                if hasattr(self, 'system_message'):
+                    self.system_message.delete(1.0, tk.END)
+                    self.system_message.insert(tk.END, system_msg)
+    
+    # Method to handle prompt selection change in minimalist mode
+    def on_mini_prompt_selected(self, *args):
+        """Handle prompt selection change in minimalist mode"""
+        if hasattr(self, 'mini_prompt_var'):
+            selected = self.mini_prompt_var.get()
+            if selected in self.prompt_paths:
+                # Get path and store
+                path = self.prompt_paths[selected]
+                self.selected_prompt_path = path
 
 def main():
     # Create the Tkinter root with themed support
