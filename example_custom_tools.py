@@ -24,13 +24,6 @@ load_dotenv()
 API_KEY_ENV_VAR = "GEMINI_API_KEY"
 api_key = os.getenv(API_KEY_ENV_VAR)
 
-# Define an Enum for weather conditions
-class WeatherCondition(Enum):
-    SUNNY = "sunny"
-    CLOUDY = "cloudy"
-    RAINY = "rainy"
-    SNOWY = "snowy"
-
 # Define and register custom tool functions with auto-generated parameters
 @FunctionRegistry.register()
 def get_time_info(format: str = "short") -> Dict[str, Any]:
@@ -149,6 +142,7 @@ async def main():
     # Create and run LiveLoop with the custom function executor
     loop = LiveLoop(
         video_mode="none",
+        audio_source="none",
         client=client,
         model=MODEL,
         config=CONFIG,

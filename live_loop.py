@@ -127,7 +127,7 @@ class LiveLoop:
         while True:
             text = await asyncio.to_thread(
                 input,
-                "message > ",
+                "", # "message > "
             )
             if text.lower() == "q":
                 break
