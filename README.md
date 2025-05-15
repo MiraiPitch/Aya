@@ -122,9 +122,11 @@ Our default system prompts are stored in the `system_prompts/default` folder.
 Available system prompts:
 - **aya_default** - Default prompt for CLI version
 - **aya_default_gui** - Default prompt for GUI version
-- **sales_assistant** - Assistant specialized for giving tips during a sales call with a customer (should be used to only output text to the live hints tool)
 - **slides_improvement_assistant** - Assistant for improving presentation slides (should be used with screen capture)
-- **ui_improvement_assistant.txt** - Assistant for UI/UX improvements (should be used with screen capture)
+- **ui_improvement_assistant** - Assistant for UI/UX improvements (should be used with screen capture)
+- **daily_scrum_assistant** - ScrumMaster assistant for facilitating Daily Scrum meetings
+- **sales_assistant** - Assistant for giving tips during a sales call with a customer (should be used to only output text to the live hints tool)
+- **buyer_assistant** - Assistant for buyers during calls with sellers to verify information and provide negotiation support (should be used to only output text to the live hints tool)
 
 You can add your own system prompts to any subfolder of the `system_prompts` folder.
 
@@ -140,7 +142,8 @@ Future development plans for Aya include:
 
 Fixes and improvements:
 - [ ] Fix issues with computer audio output capture on different operating systems
-- [ ] Add alternative Electron UI and package
+- [ ] Add alternative Electron UI
+- [ ] Create a standalone packaged version
 
 Features:
 - [ ] Add direct integrations into web browser meetings
