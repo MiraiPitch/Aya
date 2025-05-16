@@ -28,20 +28,27 @@ Output Capabilities: \
 ## Quick Start
 
 1. Create and activate a Conda environment:  
-```bash
-conda create -n aya python=3.12 -y
-conda activate aya
-```
+    ```bash
+    conda create -n aya python=3.12 -y
+    conda activate aya
+    ```
 
 2. Install dependencies:
-```bash
-pip install -r requirements.txt
-```
+    ```bash
+    pip install -r requirements.txt
+    ```
 
 3. Set your API key in your `.env` file:
-```bash
-GEMINI_API_KEY=your_api_key_here
-```
+
+    Create a `.env` file from the example file:
+    ```bash
+    cp .env.example .env
+    ```
+
+    Write your API key in the `.env` file:
+    ```bash
+    GEMINI_API_KEY=your_api_key_here
+    ```
 
 ## Usage Options
 
@@ -140,12 +147,13 @@ The Live API is still in preview and has some limitations.
 
 Future development plans for Aya include:
 
-Fixes and improvements:
+Deployment improvements:
 - [ ] Fix issues with computer audio output capture on different operating systems
-- [ ] Add alternative Electron UI
 - [ ] Create a standalone packaged version
 
 Features:
+- [ ] Add full call recording, transcription and summary
+- [ ] Add alternative Electron UI
 - [ ] Add direct integrations into web browser meetings
 
 ## Remove conda environment
