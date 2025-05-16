@@ -101,7 +101,31 @@ class AyaGUI:
         self.setup_ui()
         
         # Now that all UI components are created, refresh the system prompts
+
+        self._init_complete = False
         self.refresh_system_prompts()
+        self._init_complete = True
+        
+        # Ensure the default prompt is loaded into the system message area if visible
+        if hasattr(self, 'system_message') and self.selected_prompt_path:
+            try:
+                system_msg = load_system_message(self.selected_prompt_path)
+                self.system_message.delete(1.0, tk.END)
+                self.system_message.insert(tk.END, system_msg)
+                print(f"Initialized with system prompt: {self.selected_prompt_path}")
+            except Exception as e:
+                print(f"Error loading system prompt: {e}")
+                # Try fallback to default
+                if hasattr(self, 'default_prompt_path'):
+                    try:
+                        system_msg = load_system_message(self.default_prompt_path)
+                        self.system_message.delete(1.0, tk.END)
+                        self.system_message.insert(tk.END, system_msg)
+                        print(f"Initialized with default prompt: {self.default_prompt_path}")
+                        # Update selected prompt to default
+                        self.selected_prompt_path = self.default_prompt_path
+                    except:
+                        print("Could not load default prompt either")
         
         # Initialize tool configuration
         self.tool_config = {
@@ -133,6 +157,27 @@ class AyaGUI:
         self.message_font = (None, 11)
         self.hint_font = (None, 11)
         
+        # Load the Aya logo
+        try:
+            logo_path = "images/aya-logo.png"
+            self.logo_img = Image.open(logo_path)
+            # Smaller logo for header
+            self.header_logo_img = self.logo_img.resize((40, 40), Image.Resampling.LANCZOS)
+            self.header_logo_photo = ImageTk.PhotoImage(self.header_logo_img)
+            
+            # Use the ICO file for window icon
+            ico_path = "images/aya-logo.ico"
+            if os.path.exists(ico_path):
+                self.root.iconbitmap(ico_path)
+            else:
+                # Fallback to PNG if ICO not found
+                window_icon_img = self.logo_img.resize((100, 100), Image.Resampling.LANCZOS)
+                window_icon_photo = ImageTk.PhotoImage(window_icon_img)
+                self.root.iconphoto(True, window_icon_photo)
+        except Exception as e:
+            print(f"Error loading logo: {e}")
+            self.header_logo_photo = None
+        
         # Configure styles
         self.style = ttk.Style()
         self.style.configure("TButton", padding=6, relief="flat")
@@ -148,7 +193,8 @@ class AyaGUI:
         self.categories = []
         self.current_category = None
         self.current_category_prompts = []
-        self.selected_prompt_path = "system_prompts/default/aya_default_gui.txt"
+        self.default_prompt_path = "system_prompts/default/aya_default_gui.txt"
+        self.selected_prompt_path = self.default_prompt_path
         
         # Basic initialization of system prompts
         prompt_dict = list_system_messages()
@@ -156,6 +202,18 @@ class AyaGUI:
         self.categories = sorted(prompt_dict.keys())
         if self.categories:
             self.current_category = self.categories[0]
+            # Try to find the default prompt in the system prompts
+            default_found = False
+            for category, prompts in self.system_prompts.items():
+                for path in prompts:
+                    if "aya_default_gui.txt" in path:
+                        self.selected_prompt_path = path
+                        self.current_category = category
+                        default_found = True
+                        print(f"Found default prompt at: {path}")
+                        break
+                if default_found:
+                    break
         
         # Store content buffers
         self.message_content = ""
@@ -177,38 +235,65 @@ class AyaGUI:
         self.main_frame = ttk.Frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Top control bar
-        self.control_bar = ttk.Frame(self.main_frame)
-        self.control_bar.pack(fill=tk.X, pady=5)
+        # Header frame with logo and controls
+        self.header_frame = ttk.Frame(self.main_frame)
+        self.header_frame.pack(fill=tk.X, pady=5)
+        
+        # Left side: Logo and title
+        left_frame = ttk.Frame(self.header_frame)
+        left_frame.pack(side=tk.LEFT, fill=tk.Y)
+        
+        # Display logo if loaded
+        if hasattr(self, 'header_logo_photo') and self.header_logo_photo:
+            logo_label = ttk.Label(left_frame, image=self.header_logo_photo, background=self.bg_color)
+            logo_label.pack(side=tk.LEFT, padx=10)
+            
+            # App title
+            title_label = ttk.Label(
+                left_frame, 
+                text="Aya", 
+                font=(None, 16, "bold"),
+                background=self.bg_color,
+                foreground=self.fg_color
+            )
+            title_label.pack(side=tk.LEFT, padx=10)
+        
+        # Right side: Control buttons
+        right_frame = ttk.Frame(self.header_frame)
+        right_frame.pack(side=tk.RIGHT, fill=tk.Y)
         
         # Start/Stop conversation button
         self.conversation_button = ttk.Button(
-            self.control_bar, 
-            text="Start Conversation",
+            right_frame, 
+            text="▶ Start Conversation",
             command=self.toggle_conversation
         )
         self.conversation_button.pack(side=tk.LEFT, padx=5)
         
         # Settings toggle button
         self.settings_button = ttk.Button(
-            self.control_bar, 
+            right_frame, 
             text="▼ Show Settings",
             command=self.toggle_settings
         )
-        self.settings_button.pack(side=tk.RIGHT, padx=5)
+        self.settings_button.pack(side=tk.LEFT, padx=5)
         
         # Clear button
         self.clear_button = ttk.Button(
-            self.control_bar,
+            right_frame,
             text="Clear",
             command=self.clear_display
         )
-        self.clear_button.pack(side=tk.RIGHT, padx=5)
+        self.clear_button.pack(side=tk.LEFT, padx=5)
         
         # Status indicator
         self.status_var = tk.StringVar(value="Status: Disconnected")
-        self.status_label = ttk.Label(self.control_bar, textvariable=self.status_var)
-        self.status_label.pack(side=tk.RIGHT, padx=10)
+        self.status_label = ttk.Label(right_frame, textvariable=self.status_var)
+        self.status_label.pack(side=tk.LEFT, padx=10)
+        
+        # Add a separator for visual clarity
+        separator = ttk.Separator(self.main_frame, orient=tk.HORIZONTAL)
+        separator.pack(fill=tk.X, pady=5)
         
         # Settings frame (initially hidden)
         self.setup_settings_frame()
@@ -490,7 +575,7 @@ class AyaGUI:
     def start_conversation(self):
         """Start a new conversation with Aya"""
         # Update UI state
-        self.conversation_button.config(text="Stop Conversation")
+        self.conversation_button.config(text="■ Stop Conversation")
         self.status_var.set("Status: Connecting...")
         self.conversation_active = True
         
@@ -518,7 +603,7 @@ class AyaGUI:
     def stop_conversation(self):
         """Stop the current conversation"""
         # Update UI state
-        self.conversation_button.config(text="Start Conversation")
+        self.conversation_button.config(text="▶ Start Conversation")
         self.status_var.set("Status: Disconnected")
         self.conversation_active = False
         
@@ -543,9 +628,6 @@ class AyaGUI:
         """Enable or disable UI elements during conversation"""
         # Disable settings widgets during conversation
         state = "disabled" if disabled else "normal"
-        
-        # Disable settings button during conversation
-        self.settings_button.config(state=state)
         
         # If settings are visible, disable all settings widgets
         if self.settings_visible:
@@ -637,7 +719,7 @@ class AyaGUI:
             except asyncio.CancelledError:
                 self.log_status("Conversation stopped.")
                 self.root.after(0, lambda: self.status_var.set("Status: Disconnected"))
-                self.root.after(0, lambda: self.conversation_button.config(text="Start Conversation"))
+                self.root.after(0, lambda: self.conversation_button.config(text="▶ Start Conversation"))
                 self.root.after(0, lambda: setattr(self, 'conversation_active', False))
                 self.root.after(0, lambda: self._set_conversation_ui_state(disabled=False))
                 self.live_loop = None
@@ -645,7 +727,7 @@ class AyaGUI:
                 error_msg = f"Error in conversation: {e}"
                 self.log_status(error_msg)
                 self.root.after(0, lambda: self.status_var.set("Status: Error"))
-                self.root.after(0, lambda: self.conversation_button.config(text="Start Conversation"))
+                self.root.after(0, lambda: self.conversation_button.config(text="▶ Start Conversation"))
                 self.root.after(0, lambda: setattr(self, 'conversation_active', False))
                 self.root.after(0, lambda: self._set_conversation_ui_state(disabled=False))
                 self.live_loop = None
@@ -653,7 +735,7 @@ class AyaGUI:
             error_msg = f"Failed to start conversation: {e}"
             self.log_status(error_msg)
             self.root.after(0, lambda: self.status_var.set("Status: Error"))
-            self.root.after(0, lambda: self.conversation_button.config(text="Start Conversation"))
+            self.root.after(0, lambda: self.conversation_button.config(text="▶ Start Conversation"))
             self.root.after(0, lambda: setattr(self, 'conversation_active', False))
             self.root.after(0, lambda: self._set_conversation_ui_state(disabled=False))
             self.live_loop = None
@@ -663,6 +745,16 @@ class AyaGUI:
         # Get language and voice settings
         language_code = LANGUAGES[self.config["language"]]
         voice_name = VOICES[self.config["voice"]]
+        
+        # Verify if the selected prompt path exists
+        system_prompt_path = self.selected_prompt_path
+        if not os.path.exists(system_prompt_path) and hasattr(self, 'default_prompt_path'):
+            # Try to use the default path as a fallback
+            if os.path.exists(self.default_prompt_path):
+                system_prompt_path = self.default_prompt_path
+                print(f"Selected prompt not found, using default: {system_prompt_path}")
+            else:
+                print(f"Warning: Neither selected prompt nor default prompt found.")
         
         # Configure tools if enabled
         tools = []
@@ -691,7 +783,7 @@ class AyaGUI:
         
         # Use the utility function to create the config
         return create_gemini_config(
-            system_message_path=self.selected_prompt_path,
+            system_message_path=system_prompt_path,
             language_code=language_code,
             voice_name=voice_name,
             response_modality=self.config["response_modality"],
@@ -730,7 +822,7 @@ class AyaGUI:
         
         if self.settings_visible:
             # Show settings
-            self.settings_frame.pack(fill=tk.X, pady=5, after=self.control_bar)
+            self.settings_frame.pack(fill=tk.X, pady=5, after=self.header_frame)
             self.settings_button.config(text="▲ Hide Settings")
         else:
             # Hide settings
@@ -848,13 +940,19 @@ class AyaGUI:
             # Find full path by matching filename
             for path in self.system_prompts.get(self.current_category, []):
                 if os.path.basename(path) == selected_filename:
-                    # Update selected path
-                    self.selected_prompt_path = path
-                    
-                    # Load and display system message
-                    system_msg = load_system_message(path)
-                    self.system_message.delete(1.0, tk.END)
-                    self.system_message.insert(tk.END, system_msg)
+                    # Only update if the path has changed
+                    if self.selected_prompt_path != path:
+                        # Update selected path
+                        self.selected_prompt_path = path
+                        
+                        # Load and display system message
+                        system_msg = load_system_message(path)
+                        self.system_message.delete(1.0, tk.END)
+                        self.system_message.insert(tk.END, system_msg)
+                        
+                        # Only log when not initializing and path actually changed
+                        if hasattr(self, '_init_complete') and self._init_complete:
+                            print(f"Selected system prompt: {path}")
                     break
     
     def refresh_system_prompts(self):
@@ -880,32 +978,69 @@ class AyaGUI:
         if hasattr(self, 'category_combo'):
             self.category_combo['values'] = self.categories
             
-            # Try to maintain selection or set to first value
-            if current_category in self.categories:
-                self.category_var.set(current_category)
-            elif self.categories:
-                self.category_var.set(self.categories[0])
-                current_category = self.categories[0]
+            # Flag to track if we've found our preferred prompt
+            found_preferred_prompt = False
             
-            self.current_category = current_category
-            self.update_prompt_dropdown()
-            
-            # Try to maintain the selected prompt if possible
+            # First, try to find the exact path that was selected
             if current_prompt_path:
                 for category, prompts in self.system_prompts.items():
-                    if current_prompt_path in prompts:
-                        # Select this category and prompt
-                        self.category_var.set(category)
-                        self.current_category = category
-                        
-                        # Update prompts dropdown
-                        self.update_prompt_dropdown()
-                        
-                        # Select the prompt
-                        prompt_name = os.path.basename(current_prompt_path)
-                        if prompt_name in self.get_prompt_display_names():
-                            self.prompt_var.set(prompt_name)
+                    for path in prompts:
+                        if os.path.normpath(current_prompt_path) == os.path.normpath(path):
+                            # We found the exact path
+                            self.category_var.set(category)
+                            self.current_category = category
+                            self.selected_prompt_path = path
+                            found_preferred_prompt = True
+                            if not hasattr(self, '_init_complete'):
+                                print(f"Maintained selected prompt: {path}")
+                            break
+                    if found_preferred_prompt:
                         break
+            
+            # If we didn't find the exact path but have a default_prompt_path, try to find that
+            if not found_preferred_prompt and hasattr(self, 'default_prompt_path'):
+                default_basename = os.path.basename(self.default_prompt_path)
+                for category, prompts in self.system_prompts.items():
+                    for path in prompts:
+                        if os.path.basename(path) == default_basename:
+                            # We found the default prompt
+                            self.category_var.set(category)
+                            self.current_category = category
+                            self.selected_prompt_path = path
+                            found_preferred_prompt = True
+                            if not hasattr(self, '_init_complete'):
+                                print(f"Using default prompt: {path}")
+                            break
+                    if found_preferred_prompt:
+                        break
+            
+            # If we still haven't found a prompt, use the first available
+            if not found_preferred_prompt:
+                # Try to maintain the category if it exists
+                if current_category in self.categories:
+                    self.category_var.set(current_category)
+                    self.current_category = current_category
+                # Otherwise use the first category
+                elif self.categories:
+                    self.category_var.set(self.categories[0])
+                    self.current_category = self.categories[0]
+                
+                # Update the prompt dropdown based on the selected category
+                self.update_prompt_dropdown()
+                
+                # Note: update_prompt_dropdown will select first prompt in the category
+            else:
+                # We found our preferred prompt, so update the dropdown for that category
+                self.update_prompt_dropdown()
+                
+                # Make sure the correct prompt is selected in the dropdown
+                if self.current_category:
+                    selected_basename = os.path.basename(self.selected_prompt_path)
+                    if selected_basename in self.get_prompt_display_names():
+                        self.prompt_var.set(selected_basename)
+                        # Call on_prompt_selected to update the system message
+                        self.on_prompt_selected()
+                    
         # If UI hasn't been created yet, just set a default category
         elif self.categories:
             self.current_category = self.categories[0]
@@ -932,10 +1067,28 @@ class AyaGUI:
             # Update dropdown
             self.prompt_combo['values'] = display_names
             
-            # Select first item if list not empty
-            if display_names and hasattr(self, 'prompt_var'):
+            # Try to find the current selected_prompt_path in this category
+            current_prompt_basename = os.path.basename(self.selected_prompt_path)
+            found_in_category = False
+            
+            if current_prompt_basename in display_names:
+                self.prompt_var.set(current_prompt_basename)
+                found_in_category = True
+            
+            # Only select first item if we don't have a match and the list is not empty
+            if not found_in_category and display_names and hasattr(self, 'prompt_var'):
+                # Store the previous path before changing it
+                previous_path = self.selected_prompt_path
+                
+                # Set to first item
                 self.prompt_var.set(display_names[0])
-                self.on_prompt_selected()
+                
+                # Log the change only when not initializing
+                if hasattr(self, '_init_complete') and self._init_complete:
+                    print(f"Changed prompt from {previous_path} to {self.system_prompts[self.current_category][0]}")
+                
+            # We need to call on_prompt_selected to update the system message
+            self.on_prompt_selected()
     
     def on_display_change(self, *args):
         """Handle display type selection change"""
@@ -1130,7 +1283,7 @@ class AyaGUI:
         if sender is None:
             text = message
         else:
-            text = f"\n{sender}: {message}\n\n"
+            text = f"\n{sender}: {message.strip()}"
         
         # Add to message content buffer
         self.message_content += text

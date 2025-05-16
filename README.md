@@ -1,10 +1,13 @@
+<picture>
+  <img alt="Banner with Aya logo" src="./images/aya-banner.png"  width="full">
+</picture>
+
 <h1 align="center">Aya: Run your own AI voice assistant</h1>
 
 
 🤖 The simplest way to run your own AI voice assistant \
 🗣️ Natural interaction, just talk and use your computer as you normally would \
 🚀 Low-latency bidirectional processing of voice and video inputs
-
 
 
 Input Capabilities: \
@@ -152,9 +155,15 @@ Deployment improvements:
 - [ ] Create a standalone packaged version
 
 Features:
-- [ ] Add full call recording, transcription and summary
-- [ ] Add alternative Electron UI
-- [ ] Add direct integrations into web browser meetings
+- [ ] Alternative Electron UI
+- [ ] Full call recording, transcription and summary
+- [ ] Accessible memory based on conversations and documents
+- [ ] Hightlight part of the screen as a reponse
+- [ ] Add automatic creation of code to use APIs or tools
+
+Integrations:
+- [ ] Integration into web browser meetings
+- [ ] Integration into Discord 
 
 ## Remove conda environment
 

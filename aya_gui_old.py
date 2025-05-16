@@ -129,7 +129,7 @@ class AyaGUI:
         self.refresh_system_prompts()
         
         # Load and set the logo
-        logo_path = "MP-logo.png"
+        logo_path = "images/aya-logo.png"
         try:
             logo_img = Image.open(logo_path)
             # Resize the logo image to a reasonable size if needed
