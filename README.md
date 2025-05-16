@@ -56,25 +56,25 @@ Output Capabilities: \
 
 Run the basic CLI version of Aya:
 ```bash
-python aya_local.py
+python aya_cli.py
 ```
 
 Available arguments:
 ```bash
 # Select a video input mode
-python aya_local.py --mode [none|camera|screen]
+python aya_cli.py --mode [none|camera|screen]
 
 # Specify an audio source
-python aya_local.py --audio-source [none|microphone|computer|both]
+python aya_cli.py --audio-source [none|microphone|computer|both]
 
 # Use a custom system prompt
-python aya_local.py --system-prompt path/to/your/prompt.txt
+python aya_cli.py --system-prompt path/to/your/prompt.txt
 
 # List available system prompts
-python aya_local.py --list-prompts
+python aya_cli.py --list-prompts
 
 # Set the initial message sent to the LLM
-python aya_local.py --initial-message "Your message here"
+python aya_cli.py --initial-message "Your message here"
 ```
 
 ## Screenshots
@@ -93,7 +93,7 @@ Minimalist mode is more compact. It is useful for example to getting feedback fr
 
 For a more user-friendly interface with additional features:
 ```bash
-python aya_local_gui.py
+python aya_gui.py
 ```
 
 The GUI version provides:

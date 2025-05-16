@@ -1,7 +1,5 @@
 """
-Standalone script for Gemini Live API with camera or screen sharing
-This script accepts a `--mode` parameter to specify the video input source: 
-"camera" (default), "screen" for screen sharing, or "none" for audio-only operation.
+Standalone script for Using Aya in the command line
 """
 
 import asyncio
