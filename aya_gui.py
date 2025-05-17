@@ -193,7 +193,7 @@ class AyaGUI:
         self.categories = []
         self.current_category = None
         self.current_category_prompts = []
-        self.default_prompt_path = "system_prompts/default/aya_default_gui.txt"
+        self.default_prompt_path = "system_prompts/default/aya_default_tools.txt"
         self.selected_prompt_path = self.default_prompt_path
         
         # Basic initialization of system prompts
@@ -206,7 +206,7 @@ class AyaGUI:
             default_found = False
             for category, prompts in self.system_prompts.items():
                 for path in prompts:
-                    if "aya_default_gui.txt" in path:
+                    if "aya_default_tools.txt" in path:
                         self.selected_prompt_path = path
                         self.current_category = category
                         default_found = True
@@ -281,7 +281,7 @@ class AyaGUI:
         # Clear button
         self.clear_button = ttk.Button(
             right_frame,
-            text="Clear",
+            text="Clear Conversation",
             command=self.clear_display
         )
         self.clear_button.pack(side=tk.LEFT, padx=5)
@@ -360,30 +360,33 @@ class AyaGUI:
         
         # Text chat option
         self.text_input_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
+        self.text_input_check = ttk.Checkbutton(
             self.settings_frame, 
             text="Text chat", 
             variable=self.text_input_var,
             command=self.update_config_from_ui
-        ).grid(row=1, column=0, sticky=tk.W, padx=20, pady=2)
+        )
+        self.text_input_check.grid(row=1, column=0, sticky=tk.W, padx=20, pady=2)
         
         # Microphone option
         self.mic_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        self.mic_check = ttk.Checkbutton(
             self.settings_frame, 
             text="Microphone audio", 
             variable=self.mic_var,
             command=self.update_audio_source
-        ).grid(row=2, column=0, sticky=tk.W, padx=20, pady=2)
+        )
+        self.mic_check.grid(row=2, column=0, sticky=tk.W, padx=20, pady=2)
         
         # Computer audio option
         self.computer_audio_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        self.computer_audio_check = ttk.Checkbutton(
             self.settings_frame, 
             text="Computer audio", 
             variable=self.computer_audio_var,
             command=self.update_audio_source
-        ).grid(row=3, column=0, sticky=tk.W, padx=20, pady=2)
+        )
+        self.computer_audio_check.grid(row=3, column=0, sticky=tk.W, padx=20, pady=2)
         
         # Video mode - moved from Tools section to Input section
         ttk.Label(self.settings_frame, text="Video mode:").grid(
@@ -409,18 +412,29 @@ class AyaGUI:
             row=1, column=1, sticky=tk.W, padx=20, pady=2)
         
         self.output_var = tk.StringVar(value="TEXT")
-        output_combo = ttk.Combobox(
-            self.settings_frame, 
-            textvariable=self.output_var, 
-            values=MODALITIES, 
-            state="readonly", 
-            width=10
+        output_frame = ttk.Frame(self.settings_frame)
+        output_frame.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
+        
+        self.text_radio = ttk.Radiobutton(
+            output_frame,
+            text="Text",
+            variable=self.output_var,
+            value="TEXT",
+            command=lambda: self.update_config_from_ui()
         )
-        output_combo.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
-        self.output_var.trace_add('write', lambda *args: self.update_config_from_ui())
+        self.text_radio.pack(side=tk.LEFT, padx=5)
+        
+        self.audio_radio = ttk.Radiobutton(
+            output_frame,
+            text="Voice",
+            variable=self.output_var,
+            value="AUDIO",
+            command=lambda: self.update_config_from_ui()
+        )
+        self.audio_radio.pack(side=tk.LEFT, padx=5)
         
         # Language selection
-        ttk.Label(self.settings_frame, text="Audio language:").grid(
+        ttk.Label(self.settings_frame, text="Voice language:").grid(
             row=2, column=1, sticky=tk.W, padx=20, pady=2)
         
         self.language_var = tk.StringVar(value="English (US)")
@@ -455,12 +469,13 @@ class AyaGUI:
         
         # Enable tools checkbox
         self.tools_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(
+        self.tools_check = ttk.Checkbutton(
             self.settings_frame, 
             text="Enable tools", 
             variable=self.tools_var,
             command=self.update_config_from_ui
-        ).grid(row=1, column=3, sticky=tk.W, padx=20, pady=2)
+        )
+        self.tools_check.grid(row=1, column=3, sticky=tk.W, padx=20, pady=2)
         
         # Configure tools button (for future implementation)
         ttk.Button(
@@ -606,6 +621,7 @@ class AyaGUI:
         self.conversation_button.config(text="▶ Start Conversation")
         self.status_var.set("Status: Disconnected")
         self.conversation_active = False
+        self.display_message(None, "\n---------------------------------\n")
         
         # Enable settings after conversation ends
         self._set_conversation_ui_state(disabled=False)
@@ -626,15 +642,46 @@ class AyaGUI:
     
     def _set_conversation_ui_state(self, disabled):
         """Enable or disable UI elements during conversation"""
-        # Disable settings widgets during conversation
-        state = "disabled" if disabled else "normal"
-        
         # If settings are visible, disable all settings widgets
         if self.settings_visible:
             for widget in self.settings_frame.winfo_children():
-                if isinstance(widget, (ttk.Combobox, ttk.Entry, ttk.Button, ttk.Checkbutton)):
+                if isinstance(widget, ttk.Combobox):
+                    widget.config(state="disabled" if disabled else "readonly")
+                elif isinstance(widget, (ttk.Entry, ttk.Button)):
                     if widget != self.system_message_button:  # Allow toggling system message
-                        widget.config(state=state)
+                        widget.config(state="disabled" if disabled else "normal")
+                elif widget.winfo_class() == "TCheckbutton":
+                    # For checkbuttons, use 'alternate' state to maintain visual state when disabled
+                    if disabled:
+                        widget.state(['disabled', '!alternate'])
+                        # Ensure the checkbutton displays correctly in disabled state
+                        # The checkbutton will display as checked/unchecked based on variable value
+                    else:
+                        widget.state(['!disabled'])
+                elif widget.winfo_class() == "TRadiobutton":
+                    # Handle radiobutton state
+                    if disabled:
+                        widget.state(['disabled'])
+                    else:
+                        widget.state(['!disabled'])
+                
+                # Recurse into any frames
+                if widget.winfo_class() in ("TFrame", "TLabelframe"):
+                    for child in widget.winfo_children():
+                        if isinstance(child, ttk.Combobox):
+                            child.config(state="disabled" if disabled else "readonly")
+                        elif isinstance(child, (ttk.Entry, ttk.Button)):
+                            child.config(state="disabled" if disabled else "normal")
+                        elif child.winfo_class() == "TCheckbutton":
+                            if disabled:
+                                child.state(['disabled', '!alternate'])
+                            else:
+                                child.state(['!disabled'])
+                        elif child.winfo_class() == "TRadiobutton":
+                            if disabled:
+                                child.state(['disabled'])
+                            else:
+                                child.state(['!disabled'])
     
     async def create_and_run_live_loop(self):
         """Create and run a LiveLoop instance"""
@@ -765,6 +812,10 @@ class AyaGUI:
                 if self.tool_config.get("search", False):
                     search_tool = {'google_search': {}}
                     tools.append(search_tool)
+
+                if self.tool_config.get("code_execution", False):
+                    code_execution_tool = {'code_execution': {}}
+                    tools.append(code_execution_tool)
                 
                 # Collect enabled functions
                 enabled_functions = []
@@ -824,6 +875,10 @@ class AyaGUI:
             # Show settings
             self.settings_frame.pack(fill=tk.X, pady=5, after=self.header_frame)
             self.settings_button.config(text="▲ Hide Settings")
+            
+            # If conversation is active, ensure settings are disabled
+            if self.conversation_active:
+                self._set_conversation_ui_state(disabled=True)
         else:
             # Hide settings
             self.settings_frame.pack_forget()
@@ -861,17 +916,26 @@ class AyaGUI:
         else:
             self.config["audio_source"] = "none"
         
-        # Check for potential audio loop and warn user
-        if self.config["audio_source"] in ["computer", "both"] and self.config["response_modality"] == "AUDIO":
-            self.display_warning("Warning: Using computer audio with audio output may create feedback.")
-    
+        # Only show the warning if this is a user-initiated change (not during reset)
+        # and only warn if we're in a configuration that could cause feedback
+        if not hasattr(self, '_updating_ui') and self.config["audio_source"] in ["computer", "both"] and self.config["response_modality"] == "AUDIO":
+            # Log the warning instead of displaying a popup to avoid potential endless loops
+            self.log_status("Warning: Using computer audio with audio output may create feedback.")
+            
     def update_config_from_ui(self):
         """Update configuration from UI selections"""
         # Only update if conversation is not active
         if self.conversation_active:
-            self.display_warning("Cannot change settings during active conversation.")
-            # Reset UI elements to match current config
-            self.reset_ui_to_config()
+            # Don't display warnings if we're already in the process of resetting UI
+            if not hasattr(self, '_updating_ui') or not self._updating_ui:
+                self.display_warning("Cannot change settings during active conversation.")
+                # Set a flag to prevent multiple warning popups
+                self._updating_ui = True
+                try:
+                    # Reset UI elements to match current config
+                    self.reset_ui_to_config()
+                finally:
+                    self._updating_ui = False
             return
             
         # Update config from UI settings
@@ -897,20 +961,31 @@ class AyaGUI:
     
     def reset_ui_to_config(self):
         """Reset UI elements to match current config"""
-        # Reset dropdowns to match config
-        self.language_var.set(self.config["language"])
-        self.voice_var.set(self.config["voice"])
-        self.output_var.set(self.config["response_modality"])
-        self.video_var.set(self.config["video_mode"])
+        # Set a flag to prevent warning popups during reset
+        self._updating_ui = True
         
-        # Reset checkboxes
-        self.text_input_var.set(self.config["text_input"])
-        self.tools_var.set(self.config["tools_enabled"])
-        
-        # Reset audio checkboxes
-        audio_source = self.config["audio_source"]
-        self.mic_var.set(audio_source in ["microphone", "both"])
-        self.computer_audio_var.set(audio_source in ["computer", "both"])
+        try:
+            # Reset dropdowns to match config
+            self.language_var.set(self.config["language"])
+            self.voice_var.set(self.config["voice"])
+            self.output_var.set(self.config["response_modality"])
+            self.video_var.set(self.config["video_mode"])
+            
+            # Reset checkboxes
+            self.text_input_var.set(self.config["text_input"])
+            self.tools_var.set(self.config["tools_enabled"])
+            
+            # Reset audio checkboxes
+            audio_source = self.config["audio_source"]
+            self.mic_var.set(audio_source in ["microphone", "both"])
+            self.computer_audio_var.set(audio_source in ["computer", "both"])
+            
+            # If conversation is active, make sure settings are properly disabled
+            if self.conversation_active and self.settings_visible:
+                self._set_conversation_ui_state(disabled=True)
+        finally:
+            # Remove the updating flag when done
+            self._updating_ui = False
     
     def _set_widget_state(self, widgets, disabled=True):
         """Helper to enable/disable widgets"""
@@ -1331,8 +1406,30 @@ class AyaGUI:
         """Display a warning message in status and show a popup"""
         self.log_status(f"WARNING: {message}")
         
-        import tkinter.messagebox as messagebox
-        messagebox.showwarning("Warning", message)
+        # Only show popup if we don't already have an active warning dialog 
+        # and we're not rapidly showing multiple warnings
+        if not hasattr(self, '_warning_active') or not self._warning_active:
+            try:
+                # Set flag to prevent recursive warnings
+                self._warning_active = True
+                
+                # Check if this is a repeated warning in a short timeframe
+                current_time = datetime.datetime.now()
+                if (hasattr(self, '_last_warning_time') and 
+                    hasattr(self, '_last_warning_message') and
+                    self._last_warning_message == message and
+                    (current_time - self._last_warning_time).total_seconds() < 2):
+                    # Skip showing another dialog for the same warning within 2 seconds
+                    pass
+                else:
+                    import tkinter.messagebox as messagebox
+                    messagebox.showwarning("Warning", message)
+                    # Store this warning to prevent repetition
+                    self._last_warning_time = current_time
+                    self._last_warning_message = message
+            finally:
+                # Always reset the flag when done
+                self._warning_active = False
 
 def main():
     # Create the Tkinter root with themed support

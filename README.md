@@ -130,8 +130,8 @@ To implement your own custom tools:
 Our default system prompts are stored in the `system_prompts/default` folder.
 
 Available system prompts:
-- **aya_default** - Default prompt for CLI version
-- **aya_default_gui** - Default prompt for GUI version
+- **aya_default** - Default prompt for Aya
+- **aya_default_tools** - Default prompt for Aya with tool explanations
 - **slides_improvement_assistant** - Assistant for improving presentation slides (should be used with screen capture)
 - **ui_improvement_assistant** - Assistant for UI/UX improvements (should be used with screen capture)
 - **daily_scrum_assistant** - ScrumMaster assistant for facilitating Daily Scrum meetings
@@ -156,10 +156,13 @@ Deployment improvements:
 
 Features:
 - [ ] Alternative Electron UI
+- [ ] Separate GUIs/dashboards for different use cases
 - [ ] Full call recording, transcription and summary
 - [ ] Accessible memory based on conversations and documents
 - [ ] Hightlight part of the screen as a reponse
-- [ ] Add automatic creation of code to use APIs or tools
+- [ ] Access to files in a controlled environment
+- [ ] Automatic creation of code to use APIs or tools
+
 
 Integrations:
 - [ ] Integration into web browser meetings
