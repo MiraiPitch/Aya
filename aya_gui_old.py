@@ -100,7 +100,10 @@ class AyaGUI:
         
         # System prompts storage
         self.system_prompts = {}  # Will be populated by refresh_system_prompts
-        self.selected_prompt_path = "system_prompts/default/aya_default_gui.txt"  # Default prompt path
+        self.selected_prompt_path = "system_prompts/default/aya_default_tools.txt"  # Default prompt path
+        self.categories = []  # List of categories for system prompts
+        self.current_category = None  # Currently selected category
+        self.current_category_prompts = []  # List of prompts in the current category
         
         # Store configuration settings
         self.config_language = "English (US)"
@@ -126,7 +129,7 @@ class AyaGUI:
         self.refresh_system_prompts()
         
         # Load and set the logo
-        logo_path = "MP-logo.png"
+        logo_path = "images/aya-logo.png"
         try:
             logo_img = Image.open(logo_path)
             # Resize the logo image to a reasonable size if needed
@@ -181,28 +184,31 @@ class AyaGUI:
         prompt_frame = ttk.Frame(config_frame)
         prompt_frame.grid(row=0, column=0, columnspan=2, sticky=tk.EW, padx=5, pady=5)
         
-        ttk.Label(prompt_frame, text="System Prompt:").pack(side=tk.LEFT, padx=5)
+        ttk.Label(prompt_frame, text="Category:").pack(side=tk.LEFT, padx=5)
+        
+        # Category selection dropdown
+        self.category_var = tk.StringVar()
+        self.category_combo = ttk.Combobox(prompt_frame, textvariable=self.category_var, 
+                                          values=self.categories, state="readonly", 
+                                          font=self.config_font, width=20)
+        self.category_combo.pack(side=tk.LEFT, padx=5)
+        
+        ttk.Label(prompt_frame, text="Prompt:").pack(side=tk.LEFT, padx=5)
         
         # Prompt selection dropdown
         self.prompt_var = tk.StringVar()
-        self.prompt_combo = ttk.Combobox(prompt_frame, textvariable=self.prompt_var, values=self.system_prompts, state="readonly", font=self.config_font, width=40)
+        self.prompt_combo = ttk.Combobox(prompt_frame, textvariable=self.prompt_var, 
+                                        values=self.current_category_prompts, state="readonly", 
+                                        font=self.config_font, width=30)
         self.prompt_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5)
         
-        # Set initial value if available
-        if self.system_prompts:
-            # Find current prompt in the list
-            current_prompt = None
-            for display_name, path in self.prompt_paths.items():
-                if path == self.selected_prompt_path:
-                    current_prompt = display_name
-                    break
-            
-            if current_prompt and current_prompt in self.system_prompts:
-                self.prompt_var.set(current_prompt)
-            else:
-                self.prompt_var.set(self.system_prompts[0])
+        # Set initial values if available
+        if self.categories:
+            self.category_var.set(self.categories[0])
+            self.update_prompt_dropdown()
         
-        # Bind selection change event
+        # Bind selection change events
+        self.category_var.trace_add('write', self.on_category_selected)
         self.prompt_var.trace_add('write', self.on_prompt_selected)
         
         # Refresh button
@@ -755,28 +761,31 @@ class AyaGUI:
         prompt_frame = ttk.Frame(self.main_frame, borderwidth=0)
         prompt_frame.pack(fill=tk.X, padx=2, pady=2)
         
+        ttk.Label(prompt_frame, text="Category:").pack(side=tk.LEFT, padx=2)
+        
+        # Category selection dropdown
+        self.mini_category_var = tk.StringVar()
+        self.mini_category_combo = ttk.Combobox(prompt_frame, textvariable=self.mini_category_var, 
+                                              values=self.categories, state="readonly", 
+                                              font=self.config_font, width=15)
+        self.mini_category_combo.pack(side=tk.LEFT, padx=2)
+        
         ttk.Label(prompt_frame, text="Prompt:").pack(side=tk.LEFT, padx=2)
         
         # Prompt selection dropdown
         self.mini_prompt_var = tk.StringVar()
-        self.mini_prompt_combo = ttk.Combobox(prompt_frame, textvariable=self.mini_prompt_var, values=self.system_prompts, state="readonly", font=self.config_font, width=30)
+        self.mini_prompt_combo = ttk.Combobox(prompt_frame, textvariable=self.mini_prompt_var, 
+                                             values=self.current_category_prompts, state="readonly", 
+                                             font=self.config_font, width=15)
         self.mini_prompt_combo.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
         
-        # Set initial value if available
-        if self.system_prompts:
-            # Find current prompt in the list
-            current_prompt = None
-            for display_name, path in self.prompt_paths.items():
-                if path == self.selected_prompt_path:
-                    current_prompt = display_name
-                    break
-            
-            if current_prompt and current_prompt in self.system_prompts:
-                self.mini_prompt_var.set(current_prompt)
-            else:
-                self.mini_prompt_var.set(self.system_prompts[0])
+        # Set initial values if available
+        if self.categories:
+            self.mini_category_var.set(self.current_category or self.categories[0])
+            self.update_mini_prompt_dropdown()
         
-        # Bind selection change event
+        # Bind selection change events
+        self.mini_category_var.trace_add('write', self.on_mini_category_selected)
         self.mini_prompt_var.trace_add('write', self.on_mini_prompt_selected)
         
         # Refresh button
@@ -898,83 +907,172 @@ class AyaGUI:
         # Get available system prompts
         prompt_dict = list_system_messages()
         
-        # Clear existing system prompts
-        self.system_prompts = {}
+        # Store the original dictionary
+        self.system_prompts = prompt_dict
         
-        # Process prompts for the dropdown
-        formatted_prompts = []
-        prompt_paths = {}
+        # Get categories and sort them
+        self.categories = sorted(prompt_dict.keys())
         
-        for category, prompts in prompt_dict.items():
-            for prompt_path in prompts:
-                # Get filename without extension
-                filename = os.path.basename(prompt_path)
-                name, _ = os.path.splitext(filename)
-                
-                # Format display name
-                display_name = f"{name} ({category})"
-                
-                # Add to formatted prompts list
-                formatted_prompts.append(display_name)
-                
-                # Store path mapping
-                prompt_paths[display_name] = prompt_path
+        # Remember current selections if possible
+        current_category = self.current_category
+        current_prompt_path = self.selected_prompt_path
         
-        # Sort prompts alphabetically
-        formatted_prompts.sort()
+        # Reset current selections for update
+        self.current_category = None
+        self.current_category_prompts = []
         
-        # Store in instance variables
-        self.system_prompts = formatted_prompts
-        self.prompt_paths = prompt_paths
-        
-        # Update dropdown in both UIs if they exist
-        if hasattr(self, 'prompt_var') and hasattr(self, 'prompt_combo'):
-            current_val = self.prompt_var.get()
-            self.prompt_combo['values'] = self.system_prompts
+        # Update category dropdowns in both UIs if they exist
+        if hasattr(self, 'category_var') and hasattr(self, 'category_combo'):
+            self.category_combo['values'] = self.categories
             
             # Try to maintain selection or set to first value
-            if current_val in self.system_prompts:
-                self.prompt_var.set(current_val)
-            elif self.system_prompts:
-                self.prompt_var.set(self.system_prompts[0])
+            if current_category in self.categories:
+                self.category_var.set(current_category)
+            elif self.categories:
+                self.category_var.set(self.categories[0])
+                current_category = self.categories[0]
+            
+            self.current_category = current_category
+            self.update_prompt_dropdown()
         
-        if hasattr(self, 'mini_prompt_var') and hasattr(self, 'mini_prompt_combo'):
-            current_val = self.mini_prompt_var.get()
-            self.mini_prompt_combo['values'] = self.system_prompts
+        if hasattr(self, 'mini_category_var') and hasattr(self, 'mini_category_combo'):
+            self.mini_category_combo['values'] = self.categories
             
             # Try to maintain selection or set to first value
-            if current_val in self.system_prompts:
-                self.mini_prompt_var.set(current_val)
-            elif self.system_prompts:
-                self.mini_prompt_var.set(self.system_prompts[0])
+            if current_category in self.categories:
+                self.mini_category_var.set(current_category)
+            elif self.categories:
+                self.mini_category_var.set(self.categories[0])
+                current_category = self.categories[0]
+            
+            self.current_category = current_category
+            self.update_mini_prompt_dropdown()
+        
+        # Try to maintain the selected prompt if possible
+        # Find which category the previous selection was in
+        if current_prompt_path:
+            for category, prompts in self.system_prompts.items():
+                if current_prompt_path in prompts:
+                    # Select this category and prompt
+                    if hasattr(self, 'category_var'):
+                        self.category_var.set(category)
+                    if hasattr(self, 'mini_category_var'):
+                        self.mini_category_var.set(category)
+                    self.current_category = category
+                    
+                    # Update prompts in both dropdowns
+                    self.update_prompt_dropdown()
+                    self.update_mini_prompt_dropdown()
+                    
+                    # Select the prompt in both UIs
+                    prompt_name = os.path.basename(current_prompt_path)
+                    if hasattr(self, 'prompt_var') and prompt_name in self.get_prompt_display_names():
+                        self.prompt_var.set(prompt_name)
+                    if hasattr(self, 'mini_prompt_var') and prompt_name in self.get_prompt_display_names():
+                        self.mini_prompt_var.set(prompt_name)
+                    break
+    
+    def get_prompt_display_names(self):
+        """Get display names for prompts in the current category"""
+        if not self.current_category or self.current_category not in self.system_prompts:
+            return []
+        
+        # Get file names without full paths
+        return [os.path.basename(path) for path in self.system_prompts[self.current_category]]
+    
+    def update_prompt_dropdown(self):
+        """Update the prompt dropdown based on selected category in debug UI"""
+        if not hasattr(self, 'prompt_combo') or not self.current_category:
+            return
+        
+        if self.current_category in self.system_prompts:
+            # Get file names for display
+            display_names = self.get_prompt_display_names()
+            self.current_category_prompts = display_names
+            
+            # Update dropdown
+            self.prompt_combo['values'] = display_names
+            
+            # Select first item if list not empty
+            if display_names:
+                self.prompt_var.set(display_names[0])
+                self.on_prompt_selected()
+    
+    def update_mini_prompt_dropdown(self):
+        """Update the prompt dropdown based on selected category in minimalist UI"""
+        if not hasattr(self, 'mini_prompt_combo') or not self.current_category:
+            return
+        
+        if self.current_category in self.system_prompts:
+            # Get file names for display
+            display_names = self.get_prompt_display_names()
+            self.current_category_prompts = display_names
+            
+            # Update dropdown
+            self.mini_prompt_combo['values'] = display_names
+            
+            # Select first item if list not empty
+            if display_names:
+                self.mini_prompt_var.set(display_names[0])
+                self.on_mini_prompt_selected()
+    
+    # Method to handle category selection change
+    def on_category_selected(self, *args):
+        """Handle category selection change in debug mode"""
+        if hasattr(self, 'category_var'):
+            selected = self.category_var.get()
+            if selected in self.categories:
+                # Update current category
+                self.current_category = selected
+                
+                # Update prompt dropdown
+                self.update_prompt_dropdown()
+    
+    # Method to handle mini-category selection change
+    def on_mini_category_selected(self, *args):
+        """Handle category selection change in minimalist mode"""
+        if hasattr(self, 'mini_category_var'):
+            selected = self.mini_category_var.get()
+            if selected in self.categories:
+                # Update current category
+                self.current_category = selected
+                
+                # Update prompt dropdown
+                self.update_mini_prompt_dropdown()
     
     # Method to handle prompt selection change
     def on_prompt_selected(self, *args):
         """Handle prompt selection change in debug mode"""
-        if hasattr(self, 'prompt_var'):
-            selected = self.prompt_var.get()
-            if selected in self.prompt_paths:
-                # Get path
-                path = self.prompt_paths[selected]
-                self.selected_prompt_path = path
-                
-                # Load and display system message
-                system_msg = load_system_message(path)
-                
-                # Update message text if text area exists
-                if hasattr(self, 'system_message'):
-                    self.system_message.delete(1.0, tk.END)
-                    self.system_message.insert(tk.END, system_msg)
+        if hasattr(self, 'prompt_var') and self.current_category:
+            selected_filename = self.prompt_var.get()
+            
+            # Find full path by matching filename
+            for path in self.system_prompts.get(self.current_category, []):
+                if os.path.basename(path) == selected_filename:
+                    # Update selected path
+                    self.selected_prompt_path = path
+                    
+                    # Load and display system message
+                    system_msg = load_system_message(path)
+                    
+                    # Update message text if text area exists
+                    if hasattr(self, 'system_message'):
+                        self.system_message.delete(1.0, tk.END)
+                        self.system_message.insert(tk.END, system_msg)
+                    break
     
     # Method to handle prompt selection change in minimalist mode
     def on_mini_prompt_selected(self, *args):
         """Handle prompt selection change in minimalist mode"""
-        if hasattr(self, 'mini_prompt_var'):
-            selected = self.mini_prompt_var.get()
-            if selected in self.prompt_paths:
-                # Get path and store
-                path = self.prompt_paths[selected]
-                self.selected_prompt_path = path
+        if hasattr(self, 'mini_prompt_var') and self.current_category:
+            selected_filename = self.mini_prompt_var.get()
+            
+            # Find full path by matching filename
+            for path in self.system_prompts.get(self.current_category, []):
+                if os.path.basename(path) == selected_filename:
+                    # Update selected path
+                    self.selected_prompt_path = path
+                    break
 
     # Add method to update configuration when settings change in debug mode
     def update_config_from_ui(self):
