@@ -129,10 +129,10 @@ class AyaGUI:
         
         # Initialize tool configuration
         self.tool_config = {
-            "search": False,
-            "code_execution": False,
-            "write_message_to_gui": False,
-            "write_live_hints": False,
+            "search": True,
+            "code_execution": True,
+            "write_message_to_gui": True,
+            "write_live_hints": True,
             "print_to_console": True
         }
         
@@ -224,11 +224,11 @@ class AyaGUI:
         self.config = {
             "language": "English (US)",
             "voice": "Leda (Female)",
-            "response_modality": "TEXT",
-            "audio_source": "none",
+            "response_modality": "AUDIO",
+            "audio_source": "microphone",
             "video_mode": "none",
             "text_input": True,
-            "tools_enabled": False
+            "tools_enabled": True
         }
         
         # Main frame
@@ -369,7 +369,7 @@ class AyaGUI:
         self.text_input_check.grid(row=1, column=0, sticky=tk.W, padx=20, pady=2)
         
         # Microphone option
-        self.mic_var = tk.BooleanVar(value=False)
+        self.mic_var = tk.BooleanVar(value=True)
         self.mic_check = ttk.Checkbutton(
             self.settings_frame, 
             text="Microphone audio", 
@@ -411,7 +411,7 @@ class AyaGUI:
         ttk.Label(self.settings_frame, text="Main output:").grid(
             row=1, column=1, sticky=tk.W, padx=20, pady=2)
         
-        self.output_var = tk.StringVar(value="TEXT")
+        self.output_var = tk.StringVar(value="AUDIO")
         output_frame = ttk.Frame(self.settings_frame)
         output_frame.grid(row=1, column=2, sticky=tk.W, padx=5, pady=2)
         
@@ -468,7 +468,7 @@ class AyaGUI:
             row=0, column=3, sticky=tk.W, padx=10, pady=5)
         
         # Enable tools checkbox
-        self.tools_var = tk.BooleanVar(value=False)
+        self.tools_var = tk.BooleanVar(value=True)
         self.tools_check = ttk.Checkbutton(
             self.settings_frame, 
             text="Enable tools", 

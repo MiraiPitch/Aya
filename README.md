@@ -4,11 +4,16 @@
 
 <h1 align="center">Aya: Run your own AI voice assistant</h1>
 
+![License](https://img.shields.io/badge/license-MIT-green.svg)
+![Python Version](https://img.shields.io/badge/python-3.12+-blue.svg)
+[![Discord](https://img.shields.io/discord/1372691179740729354?color=7289DA&label=Discord&logo=discord&logoColor=white)](https://discord.gg/3KAmWKeyjR)
+[![GitHub stars](https://img.shields.io/github/stars/MiraiPitch/Aya?style=social)](https://github.com/MiraiPitch/Aya/stargazers)
 
 🤖 The simplest way to run your own AI voice assistant \
 🗣️ Natural interaction, just talk and use your computer as you normally would \
 🚀 Low-latency bidirectional processing of voice and video inputs
 
+## Overview
 
 Input Capabilities: \
 📷 Live webcam video for visual context \
@@ -21,22 +26,27 @@ Output Capabilities: \
 💬 Text responses \
 🛠️ Execution of custom tools and functions
 
+Aya provides easy to use interface to configure settings, conversation history, and system messages.
+You can configure input methods (text chat, microphone audio), output modalities (text, voice), and other settings through the UI.
 
-## Prerequisites
-
-- Python 3.12 or higher
-- A Google Gemini API key
-- Conda (recommended for environment management)
+<img src="./images/aya-ui.png" alt="Aya Interface" width="600">
 
 ## Quick Start
 
+0. Prerequisites
+
+    - A Google Gemini API key
+    - Conda (recommended for environment management)
+
 1. Create and activate a Conda environment:  
+
     ```bash
     conda create -n aya python=3.12 -y
     conda activate aya
     ```
 
 2. Install dependencies:
+
     ```bash
     pip install -r requirements.txt
     ```
@@ -44,25 +54,29 @@ Output Capabilities: \
 3. Set your API key in your `.env` file:
 
     Create a `.env` file from the example file:
+
     ```bash
     cp .env.example .env
     ```
 
     Write your API key in the `.env` file:
+
     ```bash
     GEMINI_API_KEY=your_api_key_here
     ```
 
 ## Usage Options
 
-### CLI Version (aya_local.py)
+### CLI Version (aya_cli.py)
 
 Run the basic CLI version of Aya:
+
 ```bash
 python aya_cli.py
 ```
 
 Available arguments:
+
 ```bash
 # Select a video input mode
 python aya_cli.py --mode [none|camera|screen]
@@ -80,26 +94,16 @@ python aya_cli.py --list-prompts
 python aya_cli.py --initial-message "Your message here"
 ```
 
-## Screenshots
-
-### Debug Mode
-<img src="images/aya-debug.png" alt="Aya Debug Mode" width="600">
-
-You can change all settings and see all messages in the debug mode.
-
-### Minimalist Mode
-<img src="images/aya-mini.png" alt="Aya Minimalist Mode" width="300">
-
-Minimalist mode is more compact. It is useful for example to getting feedback from the AI during a sales call with another person.
-
 ### GUI Version (aya_local_gui.py)
 
 For a more user-friendly interface with additional features:
+
 ```bash
 python aya_gui.py
 ```
 
 The GUI version provides:
+
 - Easy selection of system prompts
 - Configuration of language, input and output modalities, voice options
 - Toggle to debug view
@@ -108,17 +112,20 @@ The GUI version provides:
 ### Custom Tools (example_custom_tools.py)
 
 Aya supports custom function integration. The example_custom_tools.py file demonstrates how to:
+
 1. Create and register custom functions using the decorator pattern
 2. Make these functions available to the AI
 3. Run the system with your custom tools
 
 To run the example:
+
 ```bash
 python example_custom_tools.py
 ```
 The example default is purely text based, but the IO parameters can be changed manually.
 
 To implement your own custom tools:
+
 1. Define functions with proper type hints and docstrings (same format as the example)
 2. Register them using the `@FunctionRegistry.register()` decorator
 
@@ -130,6 +137,7 @@ To implement your own custom tools:
 Our default system prompts are stored in the `system_prompts/default` folder.
 
 Available system prompts:
+
 - **aya_default** - Default prompt for Aya
 - **aya_default_tools** - Default prompt for Aya with tool explanations
 - **slides_improvement_assistant** - Assistant for improving presentation slides (should be used with screen capture)
@@ -145,16 +153,27 @@ You can add your own system prompts to any subfolder of the `system_prompts` fol
 Aya uses the [Gemini Live API](https://ai.google.dev/gemini-api/docs/live), which provides multimodal capabilities allowing the AI to process multiple input streams simultaneously to create an interactive assistant.
 The Live API is still in preview and has some limitations.
 
+## Remove conda environment
+
+To remove the Conda environment:
+
+```bash
+conda deactivate
+conda env remove -n aya
+```
 
 ## Roadmap
 
 Future development plans for Aya include:
 
 Deployment improvements:
+
 - [ ] Fix issues with computer audio output capture on different operating systems
 - [ ] Create a standalone packaged version
 
 Features:
+
+- [ ] Change settings in the middle of a call
 - [ ] Alternative Electron UI
 - [ ] Separate GUIs/dashboards for different use cases
 - [ ] Full call recording, transcription and summary
@@ -163,17 +182,11 @@ Features:
 - [ ] Access to files in a controlled environment
 - [ ] Automatic creation of code to use APIs or tools
 
-
 Integrations:
+
 - [ ] Integration into web browser meetings
-- [ ] Integration into Discord 
+- [ ] Integration into Discord
 
-## Remove conda environment
+## License
 
-To remove the Conda environment:
-```bash
-conda deactivate
-conda env remove -n aya
-```
-
-
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

@@ -100,7 +100,7 @@ class AyaGUI:
         
         # System prompts storage
         self.system_prompts = {}  # Will be populated by refresh_system_prompts
-        self.selected_prompt_path = "system_prompts/default/aya_default_gui.txt"  # Default prompt path
+        self.selected_prompt_path = "system_prompts/default/aya_default_tools.txt"  # Default prompt path
         self.categories = []  # List of categories for system prompts
         self.current_category = None  # Currently selected category
         self.current_category_prompts = []  # List of prompts in the current category
