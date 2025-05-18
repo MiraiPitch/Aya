@@ -4,6 +4,7 @@ Utility functions for the Aya project
 
 import os
 from collections import defaultdict
+from google.genai import types
 
 def load_system_message(file_path="system_prompts/default/aya_default.txt"):
     """
@@ -53,6 +54,46 @@ def list_system_messages(base_dir="system_prompts"):
                     messages[category].append(file_path)
     
     return dict(messages)
+
+def create_gemini_config(system_message_path, language_code, voice_name, response_modality, tools=None):
+    """
+    Create a Gemini LiveConnectConfig using the provided settings
+    
+    Args:
+        system_message_path (str): Path to the system message file
+        language_code (str): Language code for speech
+        voice_name (str): Voice name for speech
+        response_modality (str): Response modality (TEXT or AUDIO)
+        tools (list): List of tool configurations
+        
+    Returns:
+        LiveConnectConfig: Configured Gemini config
+    """
+    # Load system message
+    system_message = load_system_message(system_message_path)
+    
+    # Create the config
+    config = types.LiveConnectConfig(
+        temperature=0.05,
+        response_modalities=[response_modality],
+        tools=tools or [],
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
+            ),
+            language_code=language_code,
+        ),
+        context_window_compression=(
+            types.ContextWindowCompressionConfig(
+                sliding_window=types.SlidingWindow(),
+            )
+        ),
+        system_instruction=types.Content(
+            parts=[types.Part(text=system_message)]
+        ),
+    )
+    
+    return config
 
 if __name__ == "__main__":
     import json
