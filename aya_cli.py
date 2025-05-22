@@ -1,7 +1,5 @@
 """
-Standalone script for Gemini Live API with camera or screen sharing
-This script accepts a `--mode` parameter to specify the video input source: 
-"camera" (default), "screen" for screen sharing, or "none" for audio-only operation.
+Standalone script for Using Aya in the command line
 """
 
 import asyncio
@@ -26,7 +24,7 @@ API_KEY_ENV_VAR = "GEMINI_API_KEY"
 api_key = os.getenv(API_KEY_ENV_VAR)
 
 # System message for Gemini Live API
-SYSTEM_MESSAGE_PATH = "system_prompts/default/aya_default.txt"
+SYSTEM_MESSAGE_PATH = "system_prompts/default/aya_default_tools.txt"
 
 # Initial user message (optional)
 # INITIAL_MESSAGE = None
@@ -34,13 +32,14 @@ INITIAL_MESSAGE = "[CALL_START]"
 
 # Configure tools
 search_tool = {'google_search': {}}
+code_execution_tool = {'code_execution': {}}
 function_tools = {
     'function_declarations': get_declarations_for_functions([
         print_to_console,
         # Add other functions here as needed
     ])
 }
-tools = [search_tool, function_tools]
+tools = [search_tool, code_execution_tool, function_tools]
 
 # LANG = "de-DE"
 LANG = "en-US"
@@ -56,8 +55,8 @@ LANG = "en-US"
 VOICE = "Leda"
 # VOICE = "Zephyr"
 
-# RESPONSE_MODALITIES = ["AUDIO"]
-RESPONSE_MODALITIES = ["TEXT"]
+RESPONSE_MODALITIES = ["AUDIO"]
+# RESPONSE_MODALITIES = ["TEXT"]
 
 # CONFIG = {"response_modalities": ["AUDIO"], "tools": [search_tool]}
 # CONFIG = {"response_modalities": ["AUDIO"]}
