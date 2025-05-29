@@ -5,9 +5,7 @@ Standalone script for Using Aya in the command line
 import asyncio
 import argparse
 import os
-from dotenv import load_dotenv
 
-from google import genai
 from google.genai import types
 
 # Local imports
@@ -17,11 +15,6 @@ from utils import load_system_message, list_system_messages
 
 # Import specific tool functions we want to use
 from gemini_tools import print_to_console
-
-# Load environment variables and API key
-load_dotenv()
-API_KEY_ENV_VAR = "GEMINI_API_KEY"
-api_key = os.getenv(API_KEY_ENV_VAR)
 
 # System message for Gemini Live API
 SYSTEM_MESSAGE_PATH = "system_prompts/default/aya_default_tools.txt"
@@ -44,7 +37,6 @@ tools = [search_tool, code_execution_tool, function_tools]
 # LANG = "de-DE"
 LANG = "en-US"
 
-# The Live API supports the following voices: Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus, and Zephyr.
 ## Male
 # VOICE = "Puck"
 # VOICE = "Charon"
@@ -134,10 +126,8 @@ if __name__ == "__main__":
         ),
     ) 
     # Create and run the LiveLoop with the appropriate parameters
-    client = genai.Client(http_options={"api_version": "v1beta"}, api_key=api_key)
     main = LiveLoop(
         video_mode=args.mode,
-        client=client,
         model=MODEL,
         config=CONFIG,
         initial_message=args.initial_message,

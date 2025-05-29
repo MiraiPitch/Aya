@@ -18,6 +18,7 @@ import cv2
 import pyaudio
 import PIL.Image
 import mss
+from dotenv import load_dotenv
 
 from google import genai
 from google.genai import types
@@ -56,9 +57,9 @@ os.makedirs(CONVERSATION_LOGS_DIR, exist_ok=True)
 class LiveLoop:
     def __init__(self, video_mode=DEFAULT_MODE, client=None, model=None, config=DEFAULT_CONFIG, 
                  initial_message=None, function_executor=None, audio_source=DEFAULT_AUDIO_SOURCE,
-                 record_conversation=False, system_audio_device_index=DEFAULT_SYSTEM_AUDIO_DEVICE):
+                 record_conversation=False, system_audio_device_index=DEFAULT_SYSTEM_AUDIO_DEVICE,
+                 api_key=None):
         self.video_mode = video_mode
-        self.client = client
         self.model = model
         self.config = config
         self.initial_message = initial_message
@@ -71,6 +72,13 @@ class LiveLoop:
         self.record_conversation = record_conversation
         # Optional manual override for system audio device index
         self.system_audio_device_index = system_audio_device_index
+        # API key for Gemini API
+        self.api_key = api_key
+        
+        # Initialize client if not provided
+        self.client = client
+        if self.client is None:
+            self._initialize_client()
 
         print("--------------------------------")
         print(f"Audio source: {self.audio_source}")
@@ -102,6 +110,21 @@ class LiveLoop:
         self.receive_audio_task = None
         self.play_audio_task = None
         
+    def _initialize_client(self):
+        """Initialize the Gemini client with API key from parameters or environment"""
+        # If API key wasn't provided, try to get it from environment
+        if self.api_key is None:
+            # Load environment variables if not already loaded
+            load_dotenv()
+            API_KEY_ENV_VAR = "GEMINI_API_KEY"
+            self.api_key = os.getenv(API_KEY_ENV_VAR)
+            
+            if self.api_key is None:
+                raise ValueError(f"API key not provided and {API_KEY_ENV_VAR} environment variable not set")
+        
+        # Initialize the client
+        self.client = genai.Client(http_options={"api_version": "v1beta"}, api_key=self.api_key)
+
     def _initialize_recording(self):
         """Initialize audio recording if enabled"""
         if self.record_conversation:

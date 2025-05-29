@@ -5,23 +5,13 @@ import tkinter as tk
 import threading
 import datetime
 from tkinter import ttk, scrolledtext
-from dotenv import load_dotenv
 from PIL import Image, ImageTk
 from ttkthemes import ThemedTk
-
-from google import genai
-from google.genai import types
 
 # Local imports
 from live_loop import LiveLoop
 from function_registry import FunctionRegistry, get_declarations_for_functions
 from utils import load_system_message, list_system_messages, create_gemini_config
-from gemini_tools import print_to_console
-
-# Load environment variables and API key
-load_dotenv()
-API_KEY_ENV_VAR = "GEMINI_API_KEY"
-api_key = os.getenv(API_KEY_ENV_VAR)
 
 # Default languages and voices
 LANGUAGES = {
@@ -686,9 +676,6 @@ class AyaGUI:
     async def create_and_run_live_loop(self):
         """Create and run a LiveLoop instance"""
         try:
-            # Initialize Gemini client
-            client = genai.Client(http_options={"api_version": "v1beta"}, api_key=api_key)
-            
             # Create config
             config = self.create_gemini_config()
             
@@ -718,7 +705,6 @@ class AyaGUI:
             # Create LiveLoop instance
             self.live_loop = LiveLoop(
                 video_mode=self.config['video_mode'],
-                client=client,
                 model="models/gemini-2.0-flash-live-001",
                 config=config,
                 initial_message="[CALL_START]",
