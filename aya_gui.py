@@ -11,40 +11,16 @@ from ttkthemes import ThemedTk
 # Local imports
 from live_loop import LiveLoop
 from function_registry import FunctionRegistry, get_declarations_for_functions
-from utils import load_system_message, list_system_messages, create_gemini_config
-
-# Default languages and voices
-LANGUAGES = {
-    "English (US)": "en-US",
-    "English (UK)": "en-GB",
-    "German (DE)": "de-DE",
-    "French (FR)": "fr-FR",
-    "Spanish (ES)": "es-ES",
-    "Italian (IT)": "it-IT",
-    "Japanese (JP)": "ja-JP",
-    "Korean (KR)": "ko-KR",
-    "Chinese (CN)": "cmn-CN",
-}
-
-# Voice options
-VOICES = {
-    "Leda (Female)": "Leda",
-    "Kore (Female)": "Kore", 
-    "Zephyr (Female)": "Zephyr",
-    "Puck (Male)": "Puck",
-    "Charon (Male)": "Charon",
-    "Fenrir (Male)": "Fenrir",
-    "Orus (Male)": "Orus"
-}
-
-# Audio source options
-AUDIO_SOURCES = ["none", "microphone", "computer", "both"]
-
-# Video mode options
-VIDEO_MODES = ["none", "camera", "screen"]
-
-# Output modalities
-MODALITIES = ["TEXT", "AUDIO"]
+from utils import (
+    load_system_message, 
+    list_system_messages, 
+    create_gemini_config,
+    LANGUAGES,
+    VOICES,
+    AUDIO_SOURCES,
+    VIDEO_MODES,
+    MODALITIES
+)
 
 # Define the GUI message tool
 @FunctionRegistry.register()
@@ -775,10 +751,6 @@ class AyaGUI:
     
     def create_gemini_config(self):
         """Create a Gemini config using the current settings"""
-        # Get language and voice settings
-        language_code = LANGUAGES[self.config["language"]]
-        voice_name = VOICES[self.config["voice"]]
-        
         # Verify if the selected prompt path exists
         system_prompt_path = self.selected_prompt_path
         if not os.path.exists(system_prompt_path) and hasattr(self, 'default_prompt_path'):
@@ -818,13 +790,14 @@ class AyaGUI:
                     }
                     tools.append(function_tools)
         
-        # Use the utility function to create the config
+        # Use the utility function to create the config with all parameters
         return create_gemini_config(
             system_message_path=system_prompt_path,
-            language_code=language_code,
-            voice_name=voice_name,
+            language_code=self.config["language"],  # Pass display name, util function will handle conversion
+            voice_name=self.config["voice"],        # Pass display name, util function will handle conversion
             response_modality=self.config["response_modality"],
-            tools=tools
+            tools=tools,
+            temperature=0.05                       # Fixed temperature value
         )
     
     def send_message(self):

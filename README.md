@@ -79,7 +79,7 @@ Available arguments:
 
 ```bash
 # Select a video input mode
-python aya_cli.py --mode [none|camera|screen]
+python aya_cli.py --video-mode [none|camera|screen]
 
 # Specify an audio source
 python aya_cli.py --audio-source [none|microphone|computer|both]
@@ -90,8 +90,14 @@ python aya_cli.py --system-prompt path/to/your/prompt.txt
 # List available system prompts
 python aya_cli.py --list-prompts
 
-# Set the initial message sent to the LLM
-python aya_cli.py --initial-message "Your message here"
+# Set the voice for speech output
+python aya_cli.py --voice "Leda (Female)"
+
+# Set the language for speech
+python aya_cli.py --language "English (US)"
+
+# Set the response mode (AUDIO or TEXT)
+python aya_cli.py --response-mode AUDIO
 ```
 
 ### GUI Version (aya_local_gui.py)
