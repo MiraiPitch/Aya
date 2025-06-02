@@ -24,7 +24,7 @@ from google import genai
 from google.genai import types
 
 # Package imports
-from aya.function_registry import execute_function
+from aya import function_registry
 
 # Compatibility for Python < 3.11
 import sys
@@ -77,7 +77,7 @@ class LiveLoop:
         self.initial_message = initial_message
         # Function executor is a callable that takes function_name and args
         # and returns a result. If None, the default execute_function from function_registry is used
-        self.function_executor = function_executor or execute_function
+        self.function_executor = function_executor
         # Audio source can be 'microphone', 'computer', or 'both'
         self.audio_source = audio_source
         # If True, record the conversation to a wav file
@@ -627,46 +627,26 @@ class LiveLoop:
         """Handle tool calls from the Gemini API"""
         function_responses = []
 
-        print(f"[Tool Call]")
+        for fc in tool_calls.function_calls:   
+            try:
+                # If a custom function executor was provided, use it
+                if self.function_executor:
+                    result = self.function_executor(fc.name, fc.args)
+                else:
+                    result = function_registry.execute_function(fc.name, fc.args)
+                response_data = result
+            except Exception as e:
+                response_data = {"error": f"Error executing {fc.name}: {repr(e)}"}
+                print(f"[Function Error] {response_data}")
+
+            function_response = types.FunctionResponse(
+                id=fc.id,
+                name=fc.name,
+                response=response_data
+            )
+            function_responses.append(function_response)
         
-        for tool_call in tool_calls:
-            if hasattr(tool_call, 'function_call'):
-                fc = tool_call.function_call
-                function_name = fc.name
-                args = {}
-                if hasattr(fc, 'args') and fc.args:
-                    args = fc.args
-                
-                try:
-                    # If a custom function executor was provided, use it
-                    if self.function_executor:
-                        result = self.function_executor(function_name, args)
-                    # Otherwise use the FunctionRegistry
-                    else:
-                        result = execute_function(function_name, args)
-                    
-                    self.output_text(f"[Function {function_name}] Result: {result}")
-                    
-                    # Create function response
-                    function_response = types.FunctionResponse(
-                        id=fc.id,
-                        name=function_name,
-                        response=result
-                    )
-                    function_responses.append(function_response)
-                    
-                except Exception as e:
-                    error_result = {"error": f"Error executing {function_name}: {repr(e)}"}
-                    self.output_text(f"[Function Error] {error_result}")
-                    
-                    # Create error response
-                    function_response = types.FunctionResponse(
-                        id=fc.id,
-                        name=function_name,
-                        response=error_result
-                    )
-                    function_responses.append(function_response)
-        
+        print(f"[Tools] {function_responses}")
         # Send all function responses back to the model
         if function_responses:
             await self.session.send_tool_response(function_responses=function_responses)
@@ -688,10 +668,14 @@ class LiveLoop:
                     if model_turn:
                         for part in model_turn.parts:
                             if part.executable_code is not None:
-                                print(f"Executing code: \n```\n{part.executable_code.code}\n```")
+                                # Only print for custom code, not tool calls
+                                if not part.executable_code.code.startswith("print(default_api."):
+                                    print(f"Executing code: \n```\n{part.executable_code.code}\n```")
 
                             if part.code_execution_result is not None:
-                                print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
+                                # Only print for custom code, not tool calls
+                                if not part.code_execution_result.output.startswith("{'result':"):
+                                    print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
                 
                 # Handle tool calls
                 elif chunk.tool_call:
@@ -713,10 +697,14 @@ class LiveLoop:
                     if model_turn:
                         for part in model_turn.parts:
                             if part.executable_code is not None:
-                                print(f"Executing code: \n```\n{part.executable_code.code}\n```")
+                                # Only print for custom code, not tool calls
+                                if not part.executable_code.code.startswith("print(default_api."):
+                                    print(f"Executing code: \n```\n{part.executable_code.code}\n```")
 
                             if part.code_execution_result is not None:
-                                print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
+                                # Only print for custom code, not tool calls
+                                if not part.code_execution_result.output.startswith("{'result':"):
+                                    print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
                 
                 # Handle tool calls
                 elif chunk.tool_call:

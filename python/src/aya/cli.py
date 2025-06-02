@@ -22,10 +22,10 @@ from aya.utils import (
 )
 
 # Import specific tool functions we want to use
-from aya.gemini_tools import print_to_console
+from aya.gemini_tools import print_to_console, get_current_date_and_time
 
 # System message for Gemini Live API
-SYSTEM_MESSAGE_PATH = "system_prompts/default/aya_default_tools.txt"
+SYSTEM_MESSAGE_PATH = "system_prompts/default/aya_default_tools_cli.txt"
 
 # Initial user message (optional)
 # INITIAL_MESSAGE = None
@@ -37,6 +37,7 @@ code_execution_tool = {'code_execution': {}}
 function_tools = {
     'function_declarations': get_declarations_for_functions([
         print_to_console,
+        get_current_date_and_time
         # Add other functions here as needed
     ])
 }

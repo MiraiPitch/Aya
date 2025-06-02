@@ -100,6 +100,9 @@ aya-cli --language "English (US)"
 
 # Set the response mode (AUDIO or TEXT)
 aya-cli --response-mode AUDIO
+
+# Set the initial message
+aya-cli --initial-message "Hello! Can you tell me what the current date and time is?"
 ```
 
 ### GUI Version
