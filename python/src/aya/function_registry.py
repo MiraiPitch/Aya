@@ -352,47 +352,4 @@ def get_declarations_for_functions(functions: List[Callable]):
 
 def execute_function(function_name, args):
     """Executes a function by name with the provided arguments."""
-    return FunctionRegistry.execute(function_name, args) 
-
-if __name__ == "__main__":
-    print("""
-Declare functions with type hints and either docstrings or manual parameters to use with FunctionRegistry:
-        
-With docstrings and type hints:
-@FunctionRegistry.register()
-def my_function(arg1: int, arg2: str) -> None:
-    \"""
-    My function description
-        
-    :param arg1: My first argument
-    :param arg2: My second argument
-    :return: Return description (optional)
-    \"""
-    pass
-
-With manual parameters:
-
-@FunctionRegistry.register(
-        name="my_function",
-        description="My function description",
-        parameters={
-            "type": "object",
-            "properties": {
-                "arg1": {
-                    "type": "integer",
-                    "description": "My first argument",
-                },
-                "arg2": {
-                    "type": "string",
-                    "description": "My second argument",
-                },
-            },
-            "required": ["arg1", "arg2"],
-        },
-    )
-def my_function(arg1, arg2):
-    pass
-
-more info on parameters definition:
-https://ai.google.dev/gemini-api/docs/function-calling
-    """)
+    return FunctionRegistry.execute(function_name, args)

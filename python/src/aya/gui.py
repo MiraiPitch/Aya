@@ -8,13 +8,14 @@ from tkinter import ttk, scrolledtext
 from PIL import Image, ImageTk
 from ttkthemes import ThemedTk
 
-# Local imports
-from live_loop import LiveLoop
-from function_registry import FunctionRegistry, get_declarations_for_functions
-from utils import (
+# Package imports
+from aya.live_loop import LiveLoop
+from aya.function_registry import FunctionRegistry, get_declarations_for_functions
+from aya.utils import (
     load_system_message, 
     list_system_messages, 
     create_gemini_config,
+    get_package_resource_path,
     LANGUAGES,
     VOICES,
     AUDIO_SOURCES,
@@ -125,14 +126,14 @@ class AyaGUI:
         
         # Load the Aya logo
         try:
-            logo_path = "images/aya-logo.png"
+            logo_path = get_package_resource_path("images/aya-logo.png")
             self.logo_img = Image.open(logo_path)
             # Smaller logo for header
             self.header_logo_img = self.logo_img.resize((40, 40), Image.Resampling.LANCZOS)
             self.header_logo_photo = ImageTk.PhotoImage(self.header_logo_img)
             
             # Use the ICO file for window icon
-            ico_path = "images/aya-logo.ico"
+            ico_path = get_package_resource_path("images/aya-logo.ico")
             if os.path.exists(ico_path):
                 self.root.iconbitmap(ico_path)
             else:
@@ -1397,21 +1398,15 @@ def main():
     # Create the app
     app = AyaGUI(root)
     
-    # Handle window close
+    # Set up window close handler
     def on_closing():
-        if app.loop:
-            try:
-                for task in asyncio.all_tasks(app.loop):
-                    task.cancel()
-                app.loop.call_soon_threadsafe(app.loop.stop)
-            except:
-                pass
+        if app.conversation_active:
+            app.stop_conversation()
         root.destroy()
-        sys.exit(0)
-    
+        
     root.protocol("WM_DELETE_WINDOW", on_closing)
     
-    # Start the main loop
+    # Start the Tkinter main loop
     root.mainloop()
 
 if __name__ == "__main__":

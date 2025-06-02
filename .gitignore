@@ -1,5 +1,6 @@
 # Local Notes
-*.txt
+todo.txt
+temp/
 
 # Don't ignore system prompt files
 !system_prompts/**

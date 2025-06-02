@@ -1,5 +1,5 @@
 """
-Standalone script for Using Aya in the command line
+Command line interface for Aya AI Assistant
 """
 
 import asyncio
@@ -8,10 +8,10 @@ import os
 
 from google.genai import types
 
-# Local imports
-from live_loop import LiveLoop
-from function_registry import get_declarations_for_functions
-from utils import (
+# Package imports
+from aya.live_loop import LiveLoop
+from aya.function_registry import get_declarations_for_functions
+from aya.utils import (
     list_system_messages,
     create_gemini_config,
     LANGUAGES,
@@ -22,7 +22,7 @@ from utils import (
 )
 
 # Import specific tool functions we want to use
-from gemini_tools import print_to_console
+from aya.gemini_tools import print_to_console
 
 # System message for Gemini Live API
 SYSTEM_MESSAGE_PATH = "system_prompts/default/aya_default_tools.txt"
@@ -52,7 +52,9 @@ MODEL = "models/gemini-2.0-flash-live-001"
 DEFAULT_MODE = "none"  # none, camera, screen
 DEFAULT_AUDIO_SOURCE = "microphone"  # none, microphone, computer, both
 
-if __name__ == "__main__":
+
+def main():
+    """Main entry point for the CLI application"""
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--video-mode",
@@ -138,3 +140,7 @@ if __name__ == "__main__":
         record_conversation=False
     )
     asyncio.run(main.run())
+
+
+if __name__ == "__main__":
+    main()

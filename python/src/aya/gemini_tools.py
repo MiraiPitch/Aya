@@ -6,7 +6,7 @@ Refer to the function_registry.py module for how to register and use custom tool
 
 from typing import Dict
 
-from function_registry import FunctionRegistry
+from aya.function_registry import FunctionRegistry
 
 
 @FunctionRegistry.register()
@@ -25,6 +25,6 @@ def print_to_console(message: str) -> dict:
 
 
 if __name__ == "__main__":
-    from function_registry import get_all_declarations, execute_function
+    from aya.function_registry import get_all_declarations, execute_function
     print(get_all_declarations())
     print(execute_function("print_to_console", {"message": "Hello, world!"}))

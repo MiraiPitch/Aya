@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aya"
+version = "0.1.0"
+description = "AI Assistant with voice and text interfaces"
+readme = {file = "README.md", content-type = "text/markdown"}
+authors = [
+    {name = "Aya Contributors"}
+]
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3.12"
+]
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=1.15.0",
+    "opencv-python>=4.11.0.86",
+    "pyaudio>=0.2.14",
+    "pillow>=11.2.1",
+    "mss>=10.0.0",
+    "python-dotenv>=1.0.0",
+    "tk>=0.1.0",
+    "ttkthemes>=3.2.2",
+    "docstring-parser>=0.15",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+    "build>=0.10.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/MiraiPitch/Aya/"
+"Repository" = "https://github.com/MiraiPitch/Aya.git"
+"Bug Tracker" = "https://github.com/MiraiPitch/Aya/issues"
+
+[project.scripts]
+aya-cli = "aya.cli:main"
+aya-gui = "aya.gui:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"] 

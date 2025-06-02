@@ -4,7 +4,12 @@ Utility functions for the Aya project
 
 import os
 import warnings
+import glob
+import importlib.resources
+import importlib.metadata
 from collections import defaultdict
+from pathlib import Path
+from typing import Dict, List, Any, Optional
 from google.genai import types
 
 # Constants moved from aya_gui.py
@@ -40,7 +45,34 @@ DEFAULT_VOICE = "Leda"
 DEFAULT_MODALITY = "AUDIO"
 DEFAULT_TEMPERATURE = 0.05
 
-def load_system_message(file_path="system_prompts/default/aya_default.txt"):
+def get_package_resource_path(relative_path: str) -> str:
+    """
+    Get the absolute path to a resource file in the package
+    
+    Args:
+        relative_path (str): Relative path within the package
+        
+    Returns:
+        str: Absolute path to the resource
+    """
+    try:
+        # First try to get the resource from the installed package
+        try:
+            # For Python 3.9+
+            pkg_dir = importlib.resources.files('aya')
+            resource_path = pkg_dir / 'resources' / relative_path
+            return str(resource_path)
+        except (ImportError, ModuleNotFoundError, AttributeError):
+            # Fallback for Python < 3.9
+            ctx = importlib.resources.path('aya.resources', relative_path.split('/', 1)[-1])
+            with ctx as path:
+                return str(path)
+    except (ImportError, ModuleNotFoundError, FileNotFoundError):
+        # Fallback for development environment
+        package_dir = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(package_dir, 'resources', relative_path)
+
+def load_system_message(file_path: str = "system_prompts/default/aya_default.txt") -> str:
     """
     Load a system message from a file path
     
@@ -51,13 +83,17 @@ def load_system_message(file_path="system_prompts/default/aya_default.txt"):
         str: The system message
     """
     try:
+        # If file_path is a relative path in the system_prompts directory
+        if not os.path.isabs(file_path):
+            file_path = get_package_resource_path(file_path)
+        
         with open(file_path, "r", encoding="utf-8") as f:
             return f.read().strip()
     except FileNotFoundError:
         print(f"System message file not found: {file_path}, using backup system message")
         return "You are Aya, an AI assistant with a friendly and helpful personality"
 
-def list_system_messages(base_dir="system_prompts"):
+def list_system_messages(base_dir: str = "system_prompts") -> Dict[str, List[str]]:
     """
     List all available system messages in the system_prompts directory
     
@@ -69,15 +105,18 @@ def list_system_messages(base_dir="system_prompts"):
     """
     messages = defaultdict(list)
     
+    # Get the absolute path to the system_prompts directory
+    system_prompts_path = get_package_resource_path(base_dir)
+    
     # Check if base directory exists
-    if not os.path.exists(base_dir):
+    if not os.path.exists(system_prompts_path):
         return {}
     
     # Walk through the directory structure
-    for root, _, files in os.walk(base_dir):
+    for root, _, files in os.walk(system_prompts_path):
         if files:
             # Get the category from the directory structure
-            category = os.path.relpath(root, base_dir)
+            category = os.path.relpath(root, system_prompts_path)
             if category == ".":
                 category = "root"
             
@@ -89,8 +128,14 @@ def list_system_messages(base_dir="system_prompts"):
     
     return dict(messages)
 
-def create_gemini_config(system_message_path, language_code=None, voice_name=None, 
-                        response_modality=None, tools=None, temperature=None):
+def create_gemini_config(
+    system_message_path: str, 
+    language_code: Optional[str] = None, 
+    voice_name: Optional[str] = None, 
+    response_modality: Optional[str] = None, 
+    tools: Optional[List[Dict[str, Any]]] = None, 
+    temperature: Optional[float] = None
+) -> types.LiveConnectConfig:
     """
     Create a Gemini LiveConnectConfig using the provided settings
     

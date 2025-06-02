@@ -13,7 +13,7 @@ import array
 import struct
 import datetime
 import platform
-
+import logging
 import cv2
 import pyaudio
 import PIL.Image
@@ -23,8 +23,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 
-# Local imports
-from function_registry import execute_function
+# Package imports
+from aya.function_registry import execute_function
 
 # Compatibility for Python < 3.11
 import sys
@@ -32,6 +32,18 @@ if sys.version_info < (3, 11, 0):
     import taskgroup, exceptiongroup
     asyncio.TaskGroup = taskgroup.TaskGroup
     asyncio.ExceptionGroup = exceptiongroup.ExceptionGroup
+
+# Suppress warnings about non-text parts in gemini responses
+class _NoFunctionCallWarning(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if ("there are non-text parts in the response:" in message or
+            "there are non-data parts in the response:" in message):
+            return False
+        else:
+            return True
+
+logging.getLogger("google_genai.types").addFilter(_NoFunctionCallWarning())
 
 # Constants
 FORMAT = pyaudio.paInt16
@@ -612,26 +624,52 @@ class LiveLoop:
             await self._listen_microphone()
 
     async def handle_tool_calls(self, tool_calls):
-        """Handle tool calls and return function responses."""
+        """Handle tool calls from the Gemini API"""
         function_responses = []
-        for fc in tool_calls.function_calls:
-            # Execute the function using the provided executor
-            result = self.function_executor(fc.name, fc.args)
 
-            print(50*"=")
-            print(f"Function call: {fc.name}({fc.args})")
-            print(f"Function result: {result}")
-            print(50*"=")
-            
-            function_response = types.FunctionResponse(
-                id=fc.id,
-                name=fc.name,
-                response=result
-            )
-            function_responses.append(function_response)
+        print(f"[Tool Call]")
+        
+        for tool_call in tool_calls:
+            if hasattr(tool_call, 'function_call'):
+                fc = tool_call.function_call
+                function_name = fc.name
+                args = {}
+                if hasattr(fc, 'args') and fc.args:
+                    args = fc.args
+                
+                try:
+                    # If a custom function executor was provided, use it
+                    if self.function_executor:
+                        result = self.function_executor(function_name, args)
+                    # Otherwise use the FunctionRegistry
+                    else:
+                        result = execute_function(function_name, args)
+                    
+                    self.output_text(f"[Function {function_name}] Result: {result}")
+                    
+                    # Create function response
+                    function_response = types.FunctionResponse(
+                        id=fc.id,
+                        name=function_name,
+                        response=result
+                    )
+                    function_responses.append(function_response)
+                    
+                except Exception as e:
+                    error_result = {"error": f"Error executing {function_name}: {repr(e)}"}
+                    self.output_text(f"[Function Error] {error_result}")
+                    
+                    # Create error response
+                    function_response = types.FunctionResponse(
+                        id=fc.id,
+                        name=function_name,
+                        response=error_result
+                    )
+                    function_responses.append(function_response)
         
         # Send all function responses back to the model
-        await self.session.send_tool_response(function_responses=function_responses)
+        if function_responses:
+            await self.session.send_tool_response(function_responses=function_responses)
 
     def output_text(self, text):
         # Can be overridden to output text elsewhere, e.g. to a GUI
@@ -650,10 +688,10 @@ class LiveLoop:
                     if model_turn:
                         for part in model_turn.parts:
                             if part.executable_code is not None:
-                                print(part.executable_code.code)
+                                print(f"Executing code: \n```\n{part.executable_code.code}\n```")
 
                             if part.code_execution_result is not None:
-                                print(part.code_execution_result.output)
+                                print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
                 
                 # Handle tool calls
                 elif chunk.tool_call:
@@ -675,10 +713,10 @@ class LiveLoop:
                     if model_turn:
                         for part in model_turn.parts:
                             if part.executable_code is not None:
-                                print(part.executable_code.code)
+                                print(f"Executing code: \n```\n{part.executable_code.code}\n```")
 
                             if part.code_execution_result is not None:
-                                print(part.code_execution_result.output)
+                                print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
                 
                 # Handle tool calls
                 elif chunk.tool_call:
