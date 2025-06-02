@@ -10,4 +10,4 @@ from . import live_loop
 from . import utils
 from . import function_registry
 from . import gemini_tools
-from . import try_liveapi
+from . import examples

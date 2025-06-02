@@ -8,7 +8,7 @@ import sys
 import datetime
 
 # Import the function registry
-from aya.function_registry import FunctionRegistry
+from aya.function_registry import FunctionRegistry, get_declarations_for_functions
 
 # Register some simple example tools to show how to create your own
 @FunctionRegistry.register()
@@ -105,7 +105,7 @@ def calculate_rectangle_area(length: float, width: float) -> dict:
     }
 
 # Run a basic text-based example if this file is executed directly
-if __name__ == "__main__":
+def main():
     from aya.live_loop import LiveLoop
     from aya.utils import create_gemini_config
     
@@ -119,29 +119,35 @@ if __name__ == "__main__":
     ]
     
     # Get function declarations for the tools
-    from aya.function_registry import get_declarations_for_functions
     function_tools = {
         'function_declarations': get_declarations_for_functions(available_tools)
     }
     
     # Set up the configuration
     CONFIG = create_gemini_config(
-        system_message_path="system_prompts/default/aya_default_tools.txt",
+        system_message_path="system_prompts/default/aya_default.txt",
         tools=[function_tools],
-        temperature=0.2,
+        temperature=0.05,
         # Set to TEXT to disable audio output
         response_modality="TEXT"
     )
+
+    initial_message = """
+    Hello! Can you tell me what the current date and time is?
+    """.strip()
     
     # Create and run the LiveLoop with the appropriate parameters
     main = LiveLoop(
         video_mode="none",  # No video input
         model="models/gemini-2.0-flash-live-001",
         config=CONFIG,
-        initial_message="Hello! I have access to custom tools for working with dates, times, and calculations. What would you like to know?",
+        initial_message=initial_message,
         audio_source="none",  # No audio input
         record_conversation=False
     )
     
     # Run the LiveLoop
     asyncio.run(main.run()) 
+
+if __name__ == "__main__":
+    main()
