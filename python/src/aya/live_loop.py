@@ -655,65 +655,49 @@ class LiveLoop:
         # Can be overridden to output text elsewhere, e.g. to a GUI
         print(text, end="")
 
+    async def _process_chunk(self, chunk):
+        """Process a chunk from the session, handling text, code execution, and tool calls."""
+        if chunk.server_content:
+            if chunk.text is not None:
+                self.output_text(chunk.text)
+            
+            model_turn = chunk.server_content.model_turn
+            if model_turn:
+                for part in model_turn.parts:
+                    if part.executable_code is not None:
+                        # Only print for custom code, not tool calls
+                        if not part.executable_code.code.startswith("print(default_api."):
+                            print(f"Executing code: \n```\n{part.executable_code.code}\n```")
+
+                    if part.code_execution_result is not None:
+                        # Only print for custom code, not tool calls
+                        if not part.code_execution_result.output.startswith("{'result':"):
+                            print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
+        
+        # Handle tool calls
+        elif chunk.tool_call:
+            await self.handle_tool_calls(chunk.tool_call)
+
     async def receive_text(self):
         """Background task to handle text responses and tool calls."""
         while True:
             turn = self.session.receive()
             async for chunk in turn:
-                if chunk.server_content:
-                    if chunk.text is not None:
-                        self.output_text(chunk.text)
-
-                    model_turn = chunk.server_content.model_turn
-                    if model_turn:
-                        for part in model_turn.parts:
-                            if part.executable_code is not None:
-                                # Only print for custom code, not tool calls
-                                if not part.executable_code.code.startswith("print(default_api."):
-                                    print(f"Executing code: \n```\n{part.executable_code.code}\n```")
-
-                            if part.code_execution_result is not None:
-                                # Only print for custom code, not tool calls
-                                if not part.code_execution_result.output.startswith("{'result':"):
-                                    print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
-                
-                # Handle tool calls
-                elif chunk.tool_call:
-                    await self.handle_tool_calls(chunk.tool_call)
+                await self._process_chunk(chunk)
 
     async def receive_audio(self):
         """Background task to handle audio responses and tool calls."""
         while True:
             turn = self.session.receive()
             async for chunk in turn:
-                if chunk.server_content:
-                    if chunk.text is not None:
-                        self.output_text(chunk.text)
-                    
-                    if chunk.data is not None:
-                        self.audio_in_queue.put_nowait(chunk.data)
-
-                    model_turn = chunk.server_content.model_turn
-                    if model_turn:
-                        for part in model_turn.parts:
-                            if part.executable_code is not None:
-                                # Only print for custom code, not tool calls
-                                if not part.executable_code.code.startswith("print(default_api."):
-                                    print(f"Executing code: \n```\n{part.executable_code.code}\n```")
-
-                            if part.code_execution_result is not None:
-                                # Only print for custom code, not tool calls
-                                if not part.code_execution_result.output.startswith("{'result':"):
-                                    print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
-                
-                # Handle tool calls
-                elif chunk.tool_call:
-                    await self.handle_tool_calls(chunk.tool_call)
+                # Audio-specific handling
+                if chunk.server_content and chunk.data is not None:
+                    self.audio_in_queue.put_nowait(chunk.data)
+                await self._process_chunk(chunk)
 
             # If you interrupt the model, it sends a turn_complete.
             # For interruptions to work, we need to stop playback.
-            # So empty out the audio queue because it may have loaded
-            # much more audio than has played yet.
+            # So empty out the audio queue because it may have loaded much more audio than has played yet.
             while not self.audio_in_queue.empty():
                 self.audio_in_queue.get_nowait()
 
