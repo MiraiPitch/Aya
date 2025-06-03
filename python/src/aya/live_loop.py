@@ -13,17 +13,18 @@ import array
 import struct
 import datetime
 import platform
-
+import logging
 import cv2
 import pyaudio
 import PIL.Image
 import mss
+from dotenv import load_dotenv
 
 from google import genai
 from google.genai import types
 
-# Local imports
-from function_registry import execute_function
+# Package imports
+from aya import function_registry
 
 # Compatibility for Python < 3.11
 import sys
@@ -31,6 +32,18 @@ if sys.version_info < (3, 11, 0):
     import taskgroup, exceptiongroup
     asyncio.TaskGroup = taskgroup.TaskGroup
     asyncio.ExceptionGroup = exceptiongroup.ExceptionGroup
+
+# Suppress warnings about non-text parts in gemini responses
+class _NoFunctionCallWarning(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if ("there are non-text parts in the response:" in message or
+            "there are non-data parts in the response:" in message):
+            return False
+        else:
+            return True
+
+logging.getLogger("google_genai.types").addFilter(_NoFunctionCallWarning())
 
 # Constants
 FORMAT = pyaudio.paInt16
@@ -56,21 +69,28 @@ os.makedirs(CONVERSATION_LOGS_DIR, exist_ok=True)
 class LiveLoop:
     def __init__(self, video_mode=DEFAULT_MODE, client=None, model=None, config=DEFAULT_CONFIG, 
                  initial_message=None, function_executor=None, audio_source=DEFAULT_AUDIO_SOURCE,
-                 record_conversation=False, system_audio_device_index=DEFAULT_SYSTEM_AUDIO_DEVICE):
+                 record_conversation=False, system_audio_device_index=DEFAULT_SYSTEM_AUDIO_DEVICE,
+                 api_key=None):
         self.video_mode = video_mode
-        self.client = client
         self.model = model
         self.config = config
         self.initial_message = initial_message
         # Function executor is a callable that takes function_name and args
         # and returns a result. If None, the default execute_function from function_registry is used
-        self.function_executor = function_executor or execute_function
+        self.function_executor = function_executor
         # Audio source can be 'microphone', 'computer', or 'both'
         self.audio_source = audio_source
         # If True, record the conversation to a wav file
         self.record_conversation = record_conversation
         # Optional manual override for system audio device index
         self.system_audio_device_index = system_audio_device_index
+        # API key for Gemini API
+        self.api_key = api_key
+        
+        # Initialize client if not provided
+        self.client = client
+        if self.client is None:
+            self._initialize_client()
 
         print("--------------------------------")
         print(f"Audio source: {self.audio_source}")
@@ -102,6 +122,21 @@ class LiveLoop:
         self.receive_audio_task = None
         self.play_audio_task = None
         
+    def _initialize_client(self):
+        """Initialize the Gemini client with API key from parameters or environment"""
+        # If API key wasn't provided, try to get it from environment
+        if self.api_key is None:
+            # Load environment variables if not already loaded
+            load_dotenv()
+            API_KEY_ENV_VAR = "GEMINI_API_KEY"
+            self.api_key = os.getenv(API_KEY_ENV_VAR)
+            
+            if self.api_key is None:
+                raise ValueError(f"API key not provided and {API_KEY_ENV_VAR} environment variable not set")
+        
+        # Initialize the client
+        self.client = genai.Client(http_options={"api_version": "v1beta"}, api_key=self.api_key)
+
     def _initialize_recording(self):
         """Initialize audio recording if enabled"""
         if self.record_conversation:
@@ -589,82 +624,80 @@ class LiveLoop:
             await self._listen_microphone()
 
     async def handle_tool_calls(self, tool_calls):
-        """Handle tool calls and return function responses."""
+        """Handle tool calls from the Gemini API"""
         function_responses = []
-        for fc in tool_calls.function_calls:
-            # Execute the function using the provided executor
-            result = self.function_executor(fc.name, fc.args)
 
-            print(50*"=")
-            print(f"Function call: {fc.name}({fc.args})")
-            print(f"Function result: {result}")
-            print(50*"=")
-            
+        for fc in tool_calls.function_calls:   
+            try:
+                # If a custom function executor was provided, use it
+                if self.function_executor:
+                    result = self.function_executor(fc.name, fc.args)
+                else:
+                    result = function_registry.execute_function(fc.name, fc.args)
+                response_data = result
+            except Exception as e:
+                response_data = {"error": f"Error executing {fc.name}: {repr(e)}"}
+                print(f"[Function Error] {response_data}")
+
             function_response = types.FunctionResponse(
                 id=fc.id,
                 name=fc.name,
-                response=result
+                response=response_data
             )
             function_responses.append(function_response)
         
+        print(f"[Tools] {function_responses}")
         # Send all function responses back to the model
-        await self.session.send_tool_response(function_responses=function_responses)
+        if function_responses:
+            await self.session.send_tool_response(function_responses=function_responses)
 
     def output_text(self, text):
         # Can be overridden to output text elsewhere, e.g. to a GUI
         print(text, end="")
+
+    async def _process_chunk(self, chunk):
+        """Process a chunk from the session, handling text, code execution, and tool calls."""
+        if chunk.server_content:
+            if chunk.text is not None:
+                self.output_text(chunk.text)
+            
+            model_turn = chunk.server_content.model_turn
+            if model_turn:
+                for part in model_turn.parts:
+                    if part.executable_code is not None:
+                        # Only print for custom code, not tool calls
+                        if not part.executable_code.code.startswith("print(default_api."):
+                            print(f"Executing code: \n```\n{part.executable_code.code}\n```")
+
+                    if part.code_execution_result is not None:
+                        # Only print for custom code, not tool calls
+                        if not part.code_execution_result.output.startswith("{'result':"):
+                            print(f"Code execution result: \n```\n{part.code_execution_result.output}\n```")
+        
+        # Handle tool calls
+        elif chunk.tool_call:
+            await self.handle_tool_calls(chunk.tool_call)
 
     async def receive_text(self):
         """Background task to handle text responses and tool calls."""
         while True:
             turn = self.session.receive()
             async for chunk in turn:
-                if chunk.server_content:
-                    if chunk.text is not None:
-                        self.output_text(chunk.text)
-
-                    model_turn = chunk.server_content.model_turn
-                    if model_turn:
-                        for part in model_turn.parts:
-                            if part.executable_code is not None:
-                                print(part.executable_code.code)
-
-                            if part.code_execution_result is not None:
-                                print(part.code_execution_result.output)
-                
-                # Handle tool calls
-                elif chunk.tool_call:
-                    await self.handle_tool_calls(chunk.tool_call)
+                await self._process_chunk(chunk)
 
     async def receive_audio(self):
         """Background task to handle audio responses and tool calls."""
         while True:
             turn = self.session.receive()
             async for chunk in turn:
-                if chunk.server_content:
-                    if chunk.text is not None:
-                        self.output_text(chunk.text)
-                    
-                    if chunk.data is not None:
-                        self.audio_in_queue.put_nowait(chunk.data)
-
-                    model_turn = chunk.server_content.model_turn
-                    if model_turn:
-                        for part in model_turn.parts:
-                            if part.executable_code is not None:
-                                print(part.executable_code.code)
-
-                            if part.code_execution_result is not None:
-                                print(part.code_execution_result.output)
-                
-                # Handle tool calls
-                elif chunk.tool_call:
-                    await self.handle_tool_calls(chunk.tool_call)
+                # Audio-specific handling
+                if chunk.server_content and chunk.data is not None:
+                    self.audio_in_queue.put_nowait(chunk.data)
+                await self._process_chunk(chunk)
 
             # If you interrupt the model, it sends a turn_complete.
             # For interruptions to work, we need to stop playback.
-            # So empty out the audio queue because it may have loaded
-            # much more audio than has played yet.
+            # So empty out the audio queue because it may have loaded much more audio than has played yet.
             while not self.audio_in_queue.empty():
                 self.audio_in_queue.get_nowait()
 

@@ -5,56 +5,23 @@ import tkinter as tk
 import threading
 import datetime
 from tkinter import ttk, scrolledtext
-from dotenv import load_dotenv
 from PIL import Image, ImageTk
 from ttkthemes import ThemedTk
 
-from google import genai
-from google.genai import types
-
-# Local imports
-from live_loop import LiveLoop
-from function_registry import FunctionRegistry, get_declarations_for_functions
-from utils import load_system_message, list_system_messages, create_gemini_config
-from gemini_tools import print_to_console
-
-# Load environment variables and API key
-load_dotenv()
-API_KEY_ENV_VAR = "GEMINI_API_KEY"
-api_key = os.getenv(API_KEY_ENV_VAR)
-
-# Default languages and voices
-LANGUAGES = {
-    "English (US)": "en-US",
-    "English (UK)": "en-GB",
-    "German (DE)": "de-DE",
-    "French (FR)": "fr-FR",
-    "Spanish (ES)": "es-ES",
-    "Italian (IT)": "it-IT",
-    "Japanese (JP)": "ja-JP",
-    "Korean (KR)": "ko-KR",
-    "Chinese (CN)": "cmn-CN",
-}
-
-# Voice options
-VOICES = {
-    "Leda (Female)": "Leda",
-    "Kore (Female)": "Kore", 
-    "Zephyr (Female)": "Zephyr",
-    "Puck (Male)": "Puck",
-    "Charon (Male)": "Charon",
-    "Fenrir (Male)": "Fenrir",
-    "Orus (Male)": "Orus"
-}
-
-# Audio source options
-AUDIO_SOURCES = ["none", "microphone", "computer", "both"]
-
-# Video mode options
-VIDEO_MODES = ["none", "camera", "screen"]
-
-# Output modalities
-MODALITIES = ["TEXT", "AUDIO"]
+# Package imports
+from aya.live_loop import LiveLoop
+from aya.function_registry import FunctionRegistry, get_declarations_for_functions
+from aya.utils import (
+    load_system_message, 
+    list_system_messages, 
+    create_gemini_config,
+    get_package_resource_path,
+    LANGUAGES,
+    VOICES,
+    AUDIO_SOURCES,
+    VIDEO_MODES,
+    MODALITIES
+)
 
 # Define the GUI message tool
 @FunctionRegistry.register()
@@ -159,14 +126,14 @@ class AyaGUI:
         
         # Load the Aya logo
         try:
-            logo_path = "images/aya-logo.png"
+            logo_path = get_package_resource_path("images/aya-logo.png")
             self.logo_img = Image.open(logo_path)
             # Smaller logo for header
             self.header_logo_img = self.logo_img.resize((40, 40), Image.Resampling.LANCZOS)
             self.header_logo_photo = ImageTk.PhotoImage(self.header_logo_img)
             
             # Use the ICO file for window icon
-            ico_path = "images/aya-logo.ico"
+            ico_path = get_package_resource_path("images/aya-logo.ico")
             if os.path.exists(ico_path):
                 self.root.iconbitmap(ico_path)
             else:
@@ -686,9 +653,6 @@ class AyaGUI:
     async def create_and_run_live_loop(self):
         """Create and run a LiveLoop instance"""
         try:
-            # Initialize Gemini client
-            client = genai.Client(http_options={"api_version": "v1beta"}, api_key=api_key)
-            
             # Create config
             config = self.create_gemini_config()
             
@@ -718,7 +682,6 @@ class AyaGUI:
             # Create LiveLoop instance
             self.live_loop = LiveLoop(
                 video_mode=self.config['video_mode'],
-                client=client,
                 model="models/gemini-2.0-flash-live-001",
                 config=config,
                 initial_message="[CALL_START]",
@@ -789,10 +752,6 @@ class AyaGUI:
     
     def create_gemini_config(self):
         """Create a Gemini config using the current settings"""
-        # Get language and voice settings
-        language_code = LANGUAGES[self.config["language"]]
-        voice_name = VOICES[self.config["voice"]]
-        
         # Verify if the selected prompt path exists
         system_prompt_path = self.selected_prompt_path
         if not os.path.exists(system_prompt_path) and hasattr(self, 'default_prompt_path'):
@@ -832,13 +791,14 @@ class AyaGUI:
                     }
                     tools.append(function_tools)
         
-        # Use the utility function to create the config
+        # Use the utility function to create the config with all parameters
         return create_gemini_config(
             system_message_path=system_prompt_path,
-            language_code=language_code,
-            voice_name=voice_name,
+            language_code=self.config["language"],  # Pass display name, util function will handle conversion
+            voice_name=self.config["voice"],        # Pass display name, util function will handle conversion
             response_modality=self.config["response_modality"],
-            tools=tools
+            tools=tools,
+            temperature=0.05                       # Fixed temperature value
         )
     
     def send_message(self):
@@ -1438,21 +1398,15 @@ def main():
     # Create the app
     app = AyaGUI(root)
     
-    # Handle window close
+    # Set up window close handler
     def on_closing():
-        if app.loop:
-            try:
-                for task in asyncio.all_tasks(app.loop):
-                    task.cancel()
-                app.loop.call_soon_threadsafe(app.loop.stop)
-            except:
-                pass
+        if app.conversation_active:
+            app.stop_conversation()
         root.destroy()
-        sys.exit(0)
-    
+        
     root.protocol("WM_DELETE_WINDOW", on_closing)
     
-    # Start the main loop
+    # Start the Tkinter main loop
     root.mainloop()
 
 if __name__ == "__main__":

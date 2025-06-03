@@ -1,8 +1,0 @@
-google-genai>=1.12.1
-opencv-python>=4.11.0.86
-pyaudio>=0.2.14
-pillow>=11.2.1
-mss>=10.0.0
-python-dotenv>=1.0.0
-tk>=0.1.0
-ttkthemes>=3.2.2
