@@ -10,7 +10,7 @@ rust-version = "1.60"
 tauri-build = { version = "1.5.0", features = [] }
 
 [dependencies]
-tauri = { version = "1.5.0", features = [ "shell-execute", "shell-sidecar", "shell-open", "dialog-all", "fs-read-file", "fs-write-file", "fs-read-dir", "fs-create-dir", "process-exit", "process-relaunch", "notification-all"] }
+tauri = { version = "1.5.0", features = [ "app-show", "window-start-dragging", "app-hide", "window-close", "window-unminimize", "window-minimize", "window-unmaximize", "window-show", "window-maximize", "window-hide", "shell-execute", "shell-sidecar", "shell-open", "dialog-all", "fs-read-file", "fs-write-file", "fs-read-dir", "fs-create-dir", "process-exit", "process-relaunch", "notification-all"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

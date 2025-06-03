@@ -1,18 +1,18 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { appWindow } from '@tauri-apps/api/window';
 import { 
   AyaSettings, 
-  DEFAULT_SETTINGS, 
   AyaResources,
   StartCommand,
   StopCommand,
   GetResourcesCommand
 } from '../types';
 import { useWebSocket } from './useWebSocket';
+import { useSettingsStore } from '../store/settingsStore';
 
 export const useVoiceAgent = () => {
-  const [settings, setSettings] = useState<AyaSettings>(DEFAULT_SETTINGS);
+  const { settings, updateSettings, loaded } = useSettingsStore();
   const [isRunning, setIsRunning] = useState(false);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState<string | null>(null);
@@ -25,11 +25,6 @@ export const useVoiceAgent = () => {
     error: wsError, 
     sendMessage 
   } = useWebSocket('ws://localhost:8765');
-
-  // Update settings
-  const updateSettings = useCallback((newSettings: Partial<AyaSettings>) => {
-    setSettings(prev => ({ ...prev, ...newSettings }));
-  }, []);
 
   // Start the voice agent
   const startAgent = useCallback(async () => {
@@ -118,7 +113,7 @@ export const useVoiceAgent = () => {
 
   // Listen for Python bridge status updates
   useEffect(() => {
-    const unsubscribe = listen('python-bridge-status', (event) => {
+    const unsubscribe = appWindow.listen('python-bridge-status', (event) => {
       const isRunning = event.payload as boolean;
       setIsRunning(isRunning);
       
@@ -142,7 +137,9 @@ export const useVoiceAgent = () => {
       switch (latestMessage.type) {
         case 'status':
           setStatus(latestMessage.status);
-          setIsRunning(latestMessage.isRunning);
+          if (latestMessage.isRunning !== undefined) {
+            setIsRunning(latestMessage.isRunning);
+          }
           break;
           
         case 'error':
@@ -196,6 +193,7 @@ export const useVoiceAgent = () => {
     startAgent,
     stopAgent,
     updateSettings,
-    clearError
+    clearError,
+    isLoaded: loaded
   };
 }; 

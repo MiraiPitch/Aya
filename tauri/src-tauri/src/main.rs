@@ -66,7 +66,7 @@ async fn start_python_bridge(
             state.process = Some(process);
             state.is_running = true;
             
-            // Emit event to frontend
+            // Emit event to frontend using the window object
             let _ = window.emit("python-bridge-status", true);
             
             Ok("Python bridge started successfully".to_string())
@@ -95,7 +95,7 @@ async fn stop_python_bridge(
                 println!("Stopped Python bridge process");
                 state.is_running = false;
                 
-                // Emit event to frontend
+                // Emit event to frontend using the window object
                 let _ = window.emit("python-bridge-status", false);
                 
                 Ok("Python bridge stopped successfully".to_string())

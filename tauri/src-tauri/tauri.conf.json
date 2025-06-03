@@ -2,7 +2,7 @@
   "build": {
     "beforeBuildCommand": "npm run build",
     "beforeDevCommand": "npm run start",
-    "devPath": "http://localhost:3000",
+    "devPath": "http://localhost:5173",
     "distDir": "../build"
   },
   "package": {
@@ -12,6 +12,11 @@
   "tauri": {
     "allowlist": {
       "all": false,
+      "app": {
+        "all": false,
+        "show": true,
+        "hide": true
+      },
       "shell": {
         "all": false,
         "execute": true,
@@ -40,6 +45,17 @@
       },
       "notification": {
         "all": true
+      },
+      "window": {
+        "all": false,
+        "close": true,
+        "hide": true,
+        "show": true,
+        "maximize": true,
+        "minimize": true,
+        "unmaximize": true,
+        "unminimize": true,
+        "startDragging": true
       }
     },
     "bundle": {
@@ -85,7 +101,8 @@
         "title": "Aya Voice Assistant",
         "width": 800,
         "minWidth": 700,
-        "minHeight": 500
+        "minHeight": 500,
+        "label": "main"
       }
     ]
   }
