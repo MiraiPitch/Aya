@@ -1,0 +1,56 @@
+/* VoiceControls.css */
+.voice-controls {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.control-button {
+  width: 200px;
+  height: 50px;
+  border: none;
+  border-radius: 25px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.control-button.start {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.control-button.start:hover:not(:disabled) {
+  background-color: #45a049;
+  transform: scale(1.02);
+}
+
+.control-button.stop {
+  background-color: #f44336;
+  color: white;
+}
+
+.control-button.stop:hover:not(:disabled) {
+  background-color: #d32f2f;
+  transform: scale(1.02);
+}
+
+.control-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.controls-disabled-message {
+  color: #d32f2f;
+  font-size: 0.9rem;
+  margin-top: 8px;
+  text-align: center;
+} 

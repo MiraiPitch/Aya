@@ -7,10 +7,13 @@ temp/
 
 # Logs
 conversation_logs/
+*.log
+logs/
+log/
 
 # Environment and configuration files
 .env
-.venv
+.venv/
 env/
 venv/
 ENV/
@@ -44,12 +47,12 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-*.spec
 
 # Testing artifacts
 .pytest_cache/
 htmlcov/
 .tox/
+.nox/
 .coverage
 .coverage.*
 .cache
@@ -57,12 +60,6 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
-
-# Logging
-*.log
-logs/
-log/
-
 
 # OS specific files
 .DS_Store
@@ -81,6 +78,7 @@ desktop.ini
 .cursorrules
 *.swp
 *.swo
+*~
 *.sublime-workspace
 *.sublime-project
 *.komodoproject
@@ -92,9 +90,25 @@ desktop.ini
 .spyproject
 .pyre/
 
-# PyInstaller
-dist/
-build/
+# PyInstaller/Packaging
+*.spec
+*.exe
+*.out
+*.app
+*.dmg
+*.pkg
+*.msi
+*.tar.gz
 
 # Jupyter Notebook
-.ipynb_checkpoints 
+.ipynb_checkpoints
+
+# Node.js / React
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Tauri
+target/ 

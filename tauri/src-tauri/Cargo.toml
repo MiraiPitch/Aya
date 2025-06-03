@@ -1,0 +1,25 @@
+[package]
+name = "aya-tauri"
+version = "0.1.0"
+description = "Aya Voice Assistant Tauri App"
+authors = ["MiraiPitch"]
+edition = "2021"
+rust-version = "1.60"
+
+[build-dependencies]
+tauri-build = { version = "1.5.0", features = [] }
+
+[dependencies]
+tauri = { version = "1.5.0", features = [ "shell-execute", "shell-sidecar", "shell-open", "dialog-all", "fs-read-file", "fs-write-file", "fs-read-dir", "fs-create-dir", "process-exit", "process-relaunch", "notification-all"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s" 

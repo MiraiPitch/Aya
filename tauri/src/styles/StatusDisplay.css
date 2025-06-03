@@ -1,0 +1,18 @@
+/* StatusDisplay.css */
+.status-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-indicator {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #9E9E9E;
+}
+
+.status-text {
+  font-size: 0.9rem;
+  font-weight: 500;
+} 
