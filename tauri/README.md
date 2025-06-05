@@ -92,9 +92,14 @@ tauri/
 │   ├── hooks/          # React hooks
 │   │   ├── useVoiceAgent.ts    # Voice agent control hook
 │   │   └── useWebSocket.ts     # WebSocket communication hook
+│   ├── store/          # State management
+│   │   └── settingsStore.ts    # Application settings store
 │   ├── styles/         # CSS styles
-│   │   └── App.css             # Main application styles
-│   ├── App.ts          # Application types and interfaces
+│   │   ├── App.css             # Main application styles
+│   │   ├── index.css           # Global styles
+│   │   ├── SettingsPanel.css   # Settings panel styles
+│   │   ├── StatusDisplay.css   # Status display styles
+│   │   └── VoiceControls.css   # Voice controls styles
 │   ├── App.tsx         # Main React component
 │   ├── index.tsx       # React entry point
 │   └── types.ts        # TypeScript type definitions
@@ -108,8 +113,11 @@ tauri/
 │   ├── Cargo.toml      # Rust dependencies
 │   ├── Cargo.lock      # Locked Rust dependencies
 │   └── tauri.conf.json # Tauri configuration
+├── node_modules/       # Node.js dependencies (not included in the repo)
 ├── package.json        # Node.js package configuration
+├── package-lock.json   # Locked Node.js dependencies
 ├── README.md           # This documentation file
+├── todo-fix-tauri.txt  # Todo notes for Tauri implementation
 └── tsconfig.json       # TypeScript configuration
 ```
 

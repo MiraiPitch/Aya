@@ -1,38 +1,13 @@
 # Todo List for Fixing Tauri Implementation
 
-## Critical Issues
-- [x] Remove duplicate App.js file (keep only App.tsx)
-- [x] Update App.tsx to include voice agent components (SettingsPanel, StatusDisplay, VoiceControls)
-- [x] Connect useVoiceAgent hook to the App component
-- [x] Fix index.js to properly import and render the App component (converted to index.tsx)
-- [x] Fix port conflict by changing development port to 5173
-- [x] Replace event API with window API for proper event handling
-
-## Tauri-Specific Items
-- [x] Update tauri.conf.json to include app API in allowlist
-- [x] Add window API to allowlist for proper event handling
-- [x] Add system tray integration with menu options
-- [x] Connect system tray events to app functionality
-- [x] Check packaging scripts to ensure they correctly bundle the Python bridge
-
-## Code Organization
-- [x] Add store directory with settings store for persistence
-- [x] Review styles to ensure they are properly applied
-- [x] Make sure types are properly used across the application
-- [x] Connect settings store to useVoiceAgent hook
-
 ## Testing
 - [ ] Test WebSocket connection to Python backend
 - [ ] Test voice agent start/stop functionality
 - [ ] Test settings changes
 - [ ] Test system tray functionality
 
-## Additional Tasks
-- [x] Add system tray icon and menu functionality
-- [x] Implement persistence of user settings
-
 ## Future Improvements
 - [ ] Add automatic reconnection to Python bridge if it crashes
 - [ ] Implement localization support
 - [ ] Add microphone and camera device selection
-- [ ] Create a more comprehensive settings UI with advanced options 
+- [ ] Create a more comprehensive settings UI with advanced options like choosing the audio devices

@@ -736,91 +736,68 @@ class LiveLoop:
                 else:
                     self.recording_buffer.append(bytestream)
 
+
     async def run(self):
-        """Run the main event loop, capturing and sending audio/video, receiving and playing responses"""
         self._set_status("starting")
-        
-        # Setup session
-        self.session = await self.client.generative_session(
-            model=self.model, generation_config=self.config
-        )
-        
-        # Setup audio queues
-        self.audio_in_queue = asyncio.Queue()
-        self.out_queue = asyncio.Queue()
-        
-        # Setup recording buffer if needed
-        if self.record_conversation:
-            self.recording_buffer = []
-            # Create conversation_logs directory if it doesn't exist
-            os.makedirs("conversation_logs", exist_ok=True)
-            # Create unique filename with timestamp
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.recording_file = os.path.join("conversation_logs", f"conversation_{timestamp}.wav")
-        
-        # Start media capture based on selected mode
-        if self.video_mode == "camera":
-            await self._setup_camera()
-        elif self.video_mode == "screen":
-            await self._setup_screen_capture()
-            
-        # Start audio capture based on selected source
-        audio_task = None
-        if self.audio_source == "microphone":
-            self._set_status("listening", {"source": "microphone"})
-            audio_task = asyncio.create_task(self._listen_microphone())
-        elif self.audio_source == "computer":
-            self._set_status("listening", {"source": "computer"})
-            audio_task = asyncio.create_task(self._listen_system_audio())
-        elif self.audio_source == "both":
-            self._set_status("listening", {"source": "mixed"})
-            audio_task = asyncio.create_task(self._listen_mixed_audio())
-        
-        # Create and start the chat session
-        self.chat_session = await self.session.start_chat()
-        
-        # Send initial message if provided
-        if self.initial_message:
-            self._set_status("processing")
-            response = await self.chat_session.send_message(self.initial_message)
-            for chunk in response:
-                if chunk.text:
-                    print(f"Model: {chunk.text}")
-                    
-            self._set_status("listening")
-        
-        # Start receiving task if audio output is enabled
-        if "AUDIO" in self.config.response_modalities:
-            self.receive_audio_task = asyncio.create_task(self._receive_audio())
-            self.play_audio_task = asyncio.create_task(self.play_audio())
-        
-        # Main send/receive loop
         try:
-            self.send_text_task = asyncio.create_task(self.send_and_receive())
-            await self.send_text_task
+            # Initialize recording if enabled
+            if self.record_conversation:
+                self._initialize_recording()
+                
+            async with (
+                self.client.aio.live.connect(model=self.model, config=self.config) as session,
+                asyncio.TaskGroup() as tg,
+            ):
+                self.session = session
+
+                self.audio_in_queue = asyncio.Queue()
+                self.out_queue = asyncio.Queue(maxsize=5)
+
+                tg.create_task(self.send_realtime())
+
+                # MODEL AUDIO INPUT
+                if self.audio_source != "none":
+                    tg.create_task(self.listen_audio())
+
+                # MODEL VIDEO INPUT
+                if self.video_mode == "camera":
+                    tg.create_task(self.get_frames())
+                elif self.video_mode == "screen":
+                    tg.create_task(self.get_screen())
+
+                # MODEL OUTPUT
+                if "AUDIO" in self.config.response_modalities:
+                    tg.create_task(self.receive_audio())
+                    tg.create_task(self.play_audio())
+                elif "TEXT" in self.config.response_modalities:
+                    tg.create_task(self.receive_text())
+                else:
+                    raise ValueError("Invalid response modality")
+
+                if self.initial_message:
+                    print(f"Sending initial message: {self.initial_message}")
+                    await self.session.send(input=self.initial_message, end_of_turn=True)
+                send_text_task = tg.create_task(self.send_text())
+
+                self._set_status("call in progress")
+
+                await send_text_task
+                raise asyncio.CancelledError("User requested exit")
+
         except asyncio.CancelledError:
-            print("Main loop cancelled")
+            pass
+        except ExceptionGroup as EG:
+            traceback.print_exception(EG)
         finally:
-            # Clean up tasks
-            if audio_task:
-                audio_task.cancel()
-                
-            if self.receive_audio_task:
-                self.receive_audio_task.cancel()
-                
-            if self.play_audio_task:
-                self.play_audio_task.cancel()
-                
             # Clean up audio streams
             if self.mic_stream:
                 self.mic_stream.close()
-                
             if self.system_stream:
                 self.system_stream.close()
                 
             # Save recording if enabled
-            if self.record_conversation and self.recording_buffer:
-                await self._save_recording()
+            if self.record_conversation:
+                self._save_recording() 
                 
             self._set_status("idle")
                 
@@ -836,64 +813,6 @@ class LiveLoop:
         
         # Set final status
         self._set_status("idle")
-        
-    async def send_and_receive(self):
-        """Send audio/video data to the model and process responses"""
-        try:
-            response_stream = await self.chat_session.send_message_streaming(self.out_queue)
-            
-            async for response in response_stream:
-                # For audio responses, the text is already handled in _receive_audio
-                if not self.receive_audio_task and response.text:
-                    self._set_status("speaking", {"text": response.text})
-                    print(f"Model: {response.text}")
-                
-                # Handle function calls
-                if response.function_calls:
-                    self._set_status("processing", {"function": "executing"})
-                    print(f"Function call: {response.function_calls}")
-                    for func_call in response.function_calls:
-                        # Execute the function
-                        result = await self.function_executor.execute(func_call)
-                        # Send the result back
-                        await self.chat_session.send_message(result)
-                        
-                    self._set_status("listening")
-                    
-            self._set_status("listening")
-                    
-        except Exception as e:
-            print(f"Error in send_and_receive: {e}")
-            self._set_status("error", {"error": str(e)})
-            raise
-            
-    async def _receive_audio(self):
-        """Receive audio from the model and put it in the audio queue"""
-        audio_event = asyncio.Event()
-        buffer = bytearray()
-        
-        def on_audio(audio_bytes):
-            buffer.extend(audio_bytes)
-            audio_event.set()
-        
-        # Register audio callback
-        self.chat_session.register_on_audio(on_audio)
-        
-        while True:
-            await audio_event.wait()
-            audio_event.clear()
-            
-            # Copy the buffer to avoid race conditions
-            current_buffer = buffer.copy()
-            buffer.clear()
-            
-            if current_buffer:
-                self._set_status("speaking", {"audio": True})
-                await self.audio_in_queue.put(current_buffer)
-                
-                # Wait for playback to complete
-                await asyncio.sleep(len(current_buffer) / (RECEIVE_SAMPLE_RATE * CHANNELS * 2))
-                self._set_status("listening")
 
     def _set_status(self, status: str, data: Dict[str, Any] = None):
         """Update the current status and call the status change callback if it exists"""
@@ -903,11 +822,3 @@ class LiveLoop:
         # Call the status change callback if it exists
         if self.on_status_change:
             asyncio.create_task(self.on_status_change(status, data))
-            
-    async def _setup_camera(self):
-        # Implementation of _setup_camera method
-        pass
-
-    async def _setup_screen_capture(self):
-        # Implementation of _setup_screen_capture method
-        pass 
