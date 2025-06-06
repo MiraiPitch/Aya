@@ -8,7 +8,10 @@ import json
 import logging
 import websockets
 from typing import Dict, Any, Set, Optional, Callable
-from aya.utils import list_system_messages, LANGUAGES, VOICES, AUDIO_SOURCES, VIDEO_MODES, MODALITIES
+from aya.utils import list_system_messages, LANGUAGES, VOICES, AUDIO_SOURCES, VIDEO_MODES, MODALITIES, create_gemini_config
+from aya.live_loop import LiveLoop
+from aya.function_registry import get_declarations_for_functions
+from aya.gemini_tools import print_to_console, get_current_date_and_time
 
 # Configure logging
 logging.basicConfig(
@@ -17,10 +20,24 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Default model for Gemini Live API
+DEFAULT_MODEL = "models/gemini-2.0-flash-live-001"
+
+# Configure tools
+search_tool = {'google_search': {}}
+code_execution_tool = {'code_execution': {}}
+function_tools = {
+    'function_declarations': get_declarations_for_functions([
+        print_to_console,
+        get_current_date_and_time
+    ])
+}
+tools = [search_tool, code_execution_tool, function_tools]
+
 class AyaWebSocketServer:
     """WebSocket server for Aya AI Assistant"""
     
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
+    def __init__(self, host: str = "127.0.0.1", port: int = 8765, debug: bool = False):
         """Initialize the WebSocket server"""
         self.host = host
         self.port = port
@@ -30,6 +47,14 @@ class AyaWebSocketServer:
         self.server = None
         self.on_start_callback: Optional[Callable] = None
         self.on_stop_callback: Optional[Callable] = None
+        self.live_loop: Optional[LiveLoop] = None
+        
+        # Enable debug logging if requested
+        if debug:
+            logger.setLevel(logging.DEBUG)
+            logger.info("Debug logging enabled")
+        else:
+            logger.setLevel(logging.INFO)
 
     async def register(self, websocket: websockets.WebSocketServerProtocol):
         """Register a new client"""
@@ -97,6 +122,8 @@ class AyaWebSocketServer:
                     message = json.loads(message_str)
                     command = message.get("command")
                     
+                    logger.info(f"Received command: {command}")
+                    
                     if command == "start":
                         if self.on_start_callback:
                             config = message.get("config", {})
@@ -107,7 +134,21 @@ class AyaWebSocketServer:
                             await self.handle_stop_command()
                     
                     elif command == "get_resources":
+                        # Ensure this command is handled immediately
                         await self.handle_get_resources(websocket)
+                        continue  # Skip sending status update
+                    
+                    else:
+                        logger.warning(f"Unknown command received: {command}")
+                        await websocket.send(json.dumps({
+                            "type": "error",
+                            "error": f"Unknown command: {command}",
+                            "timestamp": asyncio.get_event_loop().time()
+                        }))
+                        continue  # Skip sending status update
+                    
+                    # Send status update after handling other commands
+                    await self.send_status_to_client(websocket)
                     
                 except json.JSONDecodeError:
                     logger.error(f"Invalid JSON received: {message_str}")
@@ -118,6 +159,7 @@ class AyaWebSocketServer:
                     }))
         
         except websockets.exceptions.ConnectionClosed:
+            logger.info("Connection closed")
             pass
         finally:
             await self.unregister(websocket)
@@ -136,9 +178,44 @@ class AyaWebSocketServer:
             self.is_running = True
             await self.update_status("starting")
             
+            # Extract configuration parameters from the client's config
+            video_mode = config.get("videoMode", "none")
+            language_code = config.get("language", "en-US")
+            voice_name = config.get("voice", "Leda")
+            response_modality = config.get("responseModality", "AUDIO")
+            audio_source = config.get("audioSource", "microphone")
+            system_prompt_path = config.get("systemPrompt", "system_prompts/default/aya_default_tools_cli.txt")
+            initial_message = config.get("initialMessage", "[CALL_START]")
+            
+            # Create Gemini configuration
+            gemini_config = create_gemini_config(
+                system_message_path=system_prompt_path,
+                language_code=language_code,
+                voice_name=voice_name,
+                response_modality=response_modality,
+                tools=tools,
+                temperature=0.05
+            )
+            
+            # Create LiveLoop instance
+            self.live_loop = LiveLoop(
+                video_mode=video_mode,
+                model=DEFAULT_MODEL,
+                config=gemini_config,
+                initial_message=initial_message,
+                audio_source=audio_source,
+                record_conversation=False
+            )
+            
+            # Set status change callback
+            self.live_loop.on_status_change = self.update_status
+            
+            # Run the LiveLoop
             if self.on_start_callback:
-                # Call the start callback with the provided configuration
                 await self.on_start_callback(config)
+            else:
+                # Run directly if no callback is set
+                asyncio.create_task(self.live_loop.run())
         
         except Exception as e:
             logger.exception("Error starting voice agent")
@@ -159,6 +236,9 @@ class AyaWebSocketServer:
                 
             if self.on_stop_callback:
                 await self.on_stop_callback()
+            elif self.live_loop:
+                await self.live_loop.stop()
+                self.live_loop = None
                 
             self.is_running = False
             await self.update_status("idle")
@@ -169,21 +249,43 @@ class AyaWebSocketServer:
 
     async def handle_get_resources(self, websocket: websockets.WebSocketServerProtocol):
         """Handle request for available resources"""
-        resources = {
-            "type": "resources",
-            "resources": {
-                "systemPrompts": list_system_messages(),
-                "languages": LANGUAGES,
-                "voices": VOICES,
-                "audioSources": AUDIO_SOURCES,
-                "videoModes": VIDEO_MODES,
-                "responseModalities": MODALITIES
-            },
-            "timestamp": asyncio.get_event_loop().time()
-        }
-        await websocket.send(json.dumps(resources))
+        try:
+            logger.info("Processing get_resources request")
+            
+            # Get all available resources
+            system_prompts = list_system_messages()
+            
+            # Create the response with explicit type field
+            resources = {
+                "type": "resources",  # Ensure this is set to "resources"
+                "resources": {
+                    "systemPrompts": system_prompts,
+                    "languages": LANGUAGES,
+                    "voices": VOICES,
+                    "audioSources": AUDIO_SOURCES,
+                    "videoModes": VIDEO_MODES,
+                    "responseModalities": MODALITIES
+                },
+                "timestamp": asyncio.get_event_loop().time()
+            }
+            
+            logger.info(f"Sending resources with {len(resources['resources'])} categories")
+            # Convert to JSON string and send
+            resources_json = json.dumps(resources)
+            logger.debug(f"Resources JSON: {resources_json[:100]}...")  # Log first 100 chars
+            await websocket.send(resources_json)
+            logger.info("Resources sent successfully")
+            
+        except Exception as e:
+            logger.error(f"Error processing get_resources request: {e}")
+            error_response = {
+                "type": "error",
+                "error": f"Failed to get resources: {str(e)}",
+                "timestamp": asyncio.get_event_loop().time()
+            }
+            await websocket.send(json.dumps(error_response))
 
-    async def handler(self, websocket: websockets.WebSocketServerProtocol, path: str):
+    async def handler(self, websocket: websockets.WebSocketServerProtocol, path: str = None):
         """WebSocket connection handler"""
         await self.register(websocket)
         try:
@@ -193,9 +295,28 @@ class AyaWebSocketServer:
 
     async def start_server(self):
         """Start the WebSocket server"""
-        self.server = await websockets.serve(self.handler, self.host, self.port)
-        logger.info(f"WebSocket server started at ws://{self.host}:{self.port}")
-        return self.server
+        try:
+            # Modern websockets library API (version 10+)
+            self.server = await websockets.serve(
+                self.handler,
+                self.host,
+                self.port
+            )
+            logger.info(f"WebSocket server started at ws://{self.host}:{self.port}")
+            return self.server
+        except TypeError as e:
+            # For older websockets versions that might require different parameters
+            logger.error(f"Error starting WebSocket server with modern API: {e}")
+            logger.info("Trying legacy websockets API...")
+            
+            # Legacy websockets API
+            self.server = await websockets.server.serve(
+                self.handler,
+                self.host, 
+                self.port
+            )
+            logger.info(f"WebSocket server started at ws://{self.host}:{self.port}")
+            return self.server
 
     def set_callbacks(self, on_start=None, on_stop=None):
         """Set callbacks for start and stop commands"""
@@ -207,4 +328,47 @@ class AyaWebSocketServer:
         if self.server:
             self.server.close()
             await self.server.wait_closed()
-            logger.info("WebSocket server stopped") 
+            logger.info("WebSocket server stopped")
+
+# Add main function to run the server directly
+if __name__ == "__main__":
+    import argparse
+    
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description="Aya WebSocket Server")
+    parser.add_argument("--host", default="127.0.0.1", help="Host to bind the server to")
+    parser.add_argument("--port", type=int, default=8765, help="Port to bind the server to")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
+    args = parser.parse_args()
+    
+    # Create server instance
+    server = AyaWebSocketServer(host=args.host, port=args.port, debug=args.debug)
+    
+    # Setup callbacks
+    async def on_start(config):
+        logger.info(f"Starting LiveLoop with config: {config}")
+        if server.live_loop:
+            asyncio.create_task(server.live_loop.run())
+    
+    async def on_stop():
+        logger.info("Stopping LiveLoop")
+        if server.live_loop:
+            await server.live_loop.stop()
+            server.live_loop = None
+    
+    server.set_callbacks(on_start=on_start, on_stop=on_stop)
+    
+    # Run server
+    async def main():
+        await server.start_server()
+        # Keep the server running until interrupted
+        try:
+            while True:
+                await asyncio.sleep(3600)  # Sleep for an hour
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await server.stop_server()
+    
+    # Start the server
+    asyncio.run(main()) 
