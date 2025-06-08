@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import websockets
+import traceback
 from typing import Dict, Any, Set, Optional, Callable
 from aya.utils import list_system_messages, LANGUAGES, VOICES, AUDIO_SOURCES, VIDEO_MODES, MODALITIES, create_gemini_config
 from aya.live_loop import LiveLoop
@@ -48,6 +49,7 @@ class AyaWebSocketServer:
         self.on_start_callback: Optional[Callable] = None
         self.on_stop_callback: Optional[Callable] = None
         self.live_loop: Optional[LiveLoop] = None
+        self.live_loop_task = None
         
         # Enable debug logging if requested
         if debug:
@@ -66,8 +68,11 @@ class AyaWebSocketServer:
 
     async def unregister(self, websocket: websockets.WebSocketServerProtocol):
         """Unregister a client"""
-        self.clients.remove(websocket)
-        logger.info(f"Client disconnected. Total clients: {len(self.clients)}")
+        try:
+            self.clients.remove(websocket)
+            logger.info(f"Client disconnected. Total clients: {len(self.clients)}")
+        except KeyError:
+            logger.warning(f"Attempted to remove a client that wasn't registered")
 
     async def send_to_all(self, message: Dict[str, Any]):
         """Send a message to all connected clients"""
@@ -125,13 +130,11 @@ class AyaWebSocketServer:
                     logger.info(f"Received command: {command}")
                     
                     if command == "start":
-                        if self.on_start_callback:
-                            config = message.get("config", {})
-                            await self.handle_start_command(config)
+                        config = message.get("config", {})
+                        await self.handle_start_command(config)
                     
                     elif command == "stop":
-                        if self.on_stop_callback:
-                            await self.handle_stop_command()
+                        await self.handle_stop_command()
                     
                     elif command == "get_resources":
                         # Ensure this command is handled immediately
@@ -160,7 +163,9 @@ class AyaWebSocketServer:
         
         except websockets.exceptions.ConnectionClosed:
             logger.info("Connection closed")
-            pass
+        except Exception as e:
+            logger.error(f"Error in handle_message: {e}")
+            logger.error(traceback.format_exc())
         finally:
             await self.unregister(websocket)
 
@@ -215,13 +220,31 @@ class AyaWebSocketServer:
                 await self.on_start_callback(config)
             else:
                 # Run directly if no callback is set
-                asyncio.create_task(self.live_loop.run())
+                self.live_loop_task = asyncio.create_task(self.live_loop.run())
+                self.live_loop_task.add_done_callback(self._live_loop_done_callback)
         
         except Exception as e:
             logger.exception("Error starting voice agent")
             self.is_running = False
-            await self.send_error(str(e))
+            await self.send_error(str(e), traceback.format_exc())
             await self.update_status("error")
+
+    def _live_loop_done_callback(self, future):
+        """Callback when LiveLoop task completes"""
+        try:
+            # Check for exceptions
+            future.result()
+        except asyncio.CancelledError:
+            logger.info("LiveLoop task was cancelled")
+        except Exception as e:
+            logger.error(f"LiveLoop task failed with error: {e}")
+            logger.error(traceback.format_exc())
+        finally:
+            # Reset state if not already done
+            if self.is_running:
+                self.is_running = False
+                # Use create_task to run the coroutine
+                asyncio.create_task(self.update_status("idle"))
 
     async def handle_stop_command(self):
         """Handle stop command from client"""
@@ -234,18 +257,43 @@ class AyaWebSocketServer:
                 })
                 return
                 
+            await self.update_status("stopping")
+            
             if self.on_stop_callback:
                 await self.on_stop_callback()
             elif self.live_loop:
-                await self.live_loop.stop()
+                # Properly clean up the LiveLoop
+                try:
+                    # First stop the LiveLoop
+                    if hasattr(self.live_loop, 'stop') and callable(self.live_loop.stop):
+                        await self.live_loop.stop()
+                    
+                    # Then cancel the task if it exists and is still running
+                    if self.live_loop_task and not self.live_loop_task.done():
+                        self.live_loop_task.cancel()
+                        try:
+                            await asyncio.wait_for(self.live_loop_task, timeout=5.0)
+                        except (asyncio.CancelledError, asyncio.TimeoutError):
+                            logger.warning("LiveLoop task cancellation timed out or was cancelled")
+                except Exception as e:
+                    logger.error(f"Error stopping LiveLoop: {e}")
+                    logger.error(traceback.format_exc())
+                
+                # Clear the references
                 self.live_loop = None
+                self.live_loop_task = None
                 
             self.is_running = False
             await self.update_status("idle")
         
         except Exception as e:
             logger.exception("Error stopping voice agent")
-            await self.send_error(str(e))
+            await self.send_error(str(e), traceback.format_exc())
+            # Try to clean up anyway
+            self.live_loop = None
+            self.live_loop_task = None
+            self.is_running = False
+            await self.update_status("idle")
 
     async def handle_get_resources(self, websocket: websockets.WebSocketServerProtocol):
         """Handle request for available resources"""
@@ -278,6 +326,7 @@ class AyaWebSocketServer:
             
         except Exception as e:
             logger.error(f"Error processing get_resources request: {e}")
+            logger.error(traceback.format_exc())
             error_response = {
                 "type": "error",
                 "error": f"Failed to get resources: {str(e)}",
@@ -290,6 +339,9 @@ class AyaWebSocketServer:
         await self.register(websocket)
         try:
             await self.handle_message(websocket)
+        except Exception as e:
+            logger.error(f"Error in handler: {e}")
+            logger.error(traceback.format_exc())
         finally:
             await self.unregister(websocket)
 
@@ -325,6 +377,10 @@ class AyaWebSocketServer:
 
     async def stop_server(self):
         """Stop the WebSocket server"""
+        # Make sure to stop any running LiveLoop first
+        if self.is_running and self.live_loop:
+            await self.handle_stop_command()
+            
         if self.server:
             self.server.close()
             await self.server.wait_closed()
@@ -348,13 +404,17 @@ if __name__ == "__main__":
     async def on_start(config):
         logger.info(f"Starting LiveLoop with config: {config}")
         if server.live_loop:
-            asyncio.create_task(server.live_loop.run())
+            server.live_loop_task = asyncio.create_task(server.live_loop.run())
+            server.live_loop_task.add_done_callback(server._live_loop_done_callback)
     
     async def on_stop():
         logger.info("Stopping LiveLoop")
         if server.live_loop:
             await server.live_loop.stop()
+            if server.live_loop_task and not server.live_loop_task.done():
+                server.live_loop_task.cancel()
             server.live_loop = None
+            server.live_loop_task = None
     
     server.set_callbacks(on_start=on_start, on_stop=on_stop)
     
@@ -366,8 +426,9 @@ if __name__ == "__main__":
             while True:
                 await asyncio.sleep(3600)  # Sleep for an hour
         except asyncio.CancelledError:
-            pass
+            logger.info(f"Server cancelled: {asyncio.get_event_loop()._exception()}")
         finally:
+            logger.info("Stopping server")
             await server.stop_server()
     
     # Start the server
