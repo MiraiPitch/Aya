@@ -29,11 +29,20 @@ export const useVoiceAgent = () => {
   // Start the voice agent
   const startAgent = useCallback(async () => {
     try {
+      console.log('=== START AGENT CALLED ===');
+      console.log('=== INVOKE FUNCTION ===', typeof invoke, invoke);
+      
       // First start the Python bridge if not running
       if (!isRunning) {
         setStatus('starting');
         
+        // Check if invoke is available
+        if (typeof invoke !== 'function') {
+          throw new Error('Tauri invoke function is not available');
+        }
+        
         // Start the Python bridge via Tauri
+        console.log('=== CALLING TAURI INVOKE ===');
         await invoke('start_python_bridge');
         
         // Wait for WebSocket connection
@@ -108,6 +117,7 @@ export const useVoiceAgent = () => {
 
   // Clear any error messages
   const clearError = useCallback(() => {
+    console.log('=== CLEARING ERROR ===');
     setError(null);
   }, []);
 
@@ -133,9 +143,11 @@ export const useVoiceAgent = () => {
       if (messages.length === 0) return;
       
       const latestMessage = messages[messages.length - 1];
+      console.log('=== HANDLING MESSAGE ===', latestMessage);
       
       switch (latestMessage.type) {
         case 'status':
+          console.log('=== PROCESSING STATUS MESSAGE ===', latestMessage.status);
           setStatus(latestMessage.status);
           if (latestMessage.isRunning !== undefined) {
             setIsRunning(latestMessage.isRunning);
@@ -143,12 +155,20 @@ export const useVoiceAgent = () => {
           break;
           
         case 'error':
+          console.log('=== PROCESSING ERROR MESSAGE ===', latestMessage.error);
           setError(latestMessage.error);
           setStatus('error');
           break;
           
         case 'resources':
+          console.log('=== PROCESSING RESOURCES MESSAGE ===', latestMessage.resources);
+          console.log('=== WEBSOCKET CONNECTION STATE BEFORE SETTING RESOURCES ===', isConnected);
           setResources(latestMessage.resources);
+          console.log('=== RESOURCES SET, CHECKING CONNECTION STATE ===', isConnected);
+          break;
+          
+        default:
+          console.log('=== UNKNOWN MESSAGE TYPE ===', (latestMessage as any).type);
           break;
       }
     };
@@ -159,13 +179,16 @@ export const useVoiceAgent = () => {
   // Set WebSocket error
   useEffect(() => {
     if (wsError) {
+      console.log('=== SETTING WEBSOCKET ERROR ===', wsError);
       setError(wsError);
     }
   }, [wsError]);
 
   // Fetch resources when connected
   useEffect(() => {
+    console.log('=== FETCH RESOURCES EFFECT ===', { isConnected, hasResources: !!resources });
     if (isConnected && !resources) {
+      console.log('=== CALLING FETCH RESOURCES ===');
       fetchResources();
     }
   }, [isConnected, resources, fetchResources]);

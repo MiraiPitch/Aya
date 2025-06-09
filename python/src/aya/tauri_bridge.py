@@ -102,9 +102,14 @@ async def main():
         print("=== WEBSOCKET SERVER STARTED SUCCESSFULLY ===")
         logger.info("Tauri Bridge started successfully - WebSocket server listening on ws://127.0.0.1:8765")
         
-        # Keep the server running
+        # Keep the server running with periodic status checks
+        loop_count = 0
         while True:
-            await asyncio.sleep(1)
+            await asyncio.sleep(5)  # Check every 5 seconds
+            loop_count += 1
+            if loop_count % 12 == 0:  # Log every minute
+                print(f"=== BRIDGE ALIVE - Loop #{loop_count}, Clients: {len(server.clients) if server else 0} ===")
+                logger.info(f"Bridge status check - Loop #{loop_count}, Clients: {len(server.clients)}")
             
     except asyncio.CancelledError:
         logger.info("Bridge cancelled")

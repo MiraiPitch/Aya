@@ -70,7 +70,22 @@ class AyaWebSocketServer:
         """Unregister a client"""
         try:
             self.clients.remove(websocket)
-            logger.info(f"Client disconnected. Total clients: {len(self.clients)}")
+            logger.info(f"Client disconnected from {websocket.remote_address}. Total clients: {len(self.clients)}")
+            # Log WebSocket state with version compatibility
+            try:
+                if hasattr(websocket, 'open'):
+                    open_state = websocket.open
+                else:
+                    open_state = "unknown"
+                
+                if hasattr(websocket, 'closed'):
+                    closed_state = websocket.closed
+                else:
+                    closed_state = "unknown"
+                    
+                logger.info(f"WebSocket state: open={open_state}, closed={closed_state}")
+            except Exception as state_error:
+                logger.debug(f"Could not check WebSocket state: {state_error}")
         except KeyError:
             logger.warning(f"Attempted to remove a client that wasn't registered")
 
@@ -161,11 +176,47 @@ class AyaWebSocketServer:
                         "timestamp": asyncio.get_event_loop().time()
                     }))
         
-        except websockets.exceptions.ConnectionClosed:
-            logger.info("Connection closed")
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.info(f"Connection closed: code={e.code}, reason={e.reason}")
+            # Map close codes for debugging
+            close_code_meanings = {
+                1000: "Normal closure",
+                1001: "Going away", 
+                1002: "Protocol error",
+                1003: "Unsupported data",
+                1005: "No status received",
+                1006: "Abnormal closure",
+                1007: "Invalid frame payload data",
+                1008: "Policy violation",
+                1009: "Message too big",
+                1010: "Mandatory extension",
+                1011: "Internal server error",
+                1015: "TLS handshake"
+            }
+            meaning = close_code_meanings.get(e.code, f"Unknown code: {e.code}")
+            logger.info(f"Close code meaning: {meaning}")
         except Exception as e:
             logger.error(f"Error in handle_message: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
             logger.error(traceback.format_exc())
+            
+            # Try to send error to client if connection is still open
+            try:
+                # Check if connection is still open (websockets library version compatibility)
+                connection_open = True
+                if hasattr(websocket, 'closed'):
+                    connection_open = not websocket.closed
+                elif hasattr(websocket, 'open'):
+                    connection_open = websocket.open
+                
+                if connection_open:
+                    await websocket.send(json.dumps({
+                        "type": "error",
+                        "error": f"Server error: {str(e)}",
+                        "timestamp": asyncio.get_event_loop().time()
+                    }))
+            except Exception as send_error:
+                logger.error(f"Failed to send error to client: {send_error}")
         finally:
             await self.unregister(websocket)
 
@@ -331,10 +382,45 @@ class AyaWebSocketServer:
             
             logger.info(f"Sending resources with {len(resources['resources'])} categories")
             # Convert to JSON string and send
-            resources_json = json.dumps(resources)
-            logger.debug(f"Resources JSON: {resources_json[:100]}...")  # Log first 100 chars
-            await websocket.send(resources_json)
-            logger.info("Resources sent successfully")
+            try:
+                resources_json = json.dumps(resources)
+                logger.debug(f"Resources JSON: {resources_json[:100]}...")  # Log first 100 chars
+                await websocket.send(resources_json)
+                logger.info("Resources sent successfully")
+                
+                # Wait a moment and verify connection is still open
+                await asyncio.sleep(0.1)  # Small delay to let any immediate close events happen
+                
+                try:
+                    # Check if connection is still open (websockets library version compatibility)
+                    if hasattr(websocket, 'closed'):
+                        is_closed = websocket.closed
+                    elif hasattr(websocket, 'open'):
+                        is_closed = not websocket.open
+                    else:
+                        # Can't determine state, assume it's open
+                        is_closed = False
+                        
+                    if is_closed:
+                        logger.warning("WebSocket was closed after sending resources")
+                    else:
+                        logger.debug("WebSocket connection still open after sending resources")
+                        
+                        # Try to ping the connection to ensure it's truly alive
+                        try:
+                            await websocket.ping()
+                            logger.debug("WebSocket ping successful")
+                        except Exception as ping_error:
+                            logger.warning(f"WebSocket ping failed: {ping_error}")
+                            
+                except Exception as check_error:
+                    logger.debug(f"Could not check WebSocket state: {check_error}")
+                    
+            except Exception as send_error:
+                logger.error(f"Error sending resources: {send_error}")
+                logger.error(f"Send error type: {type(send_error).__name__}")
+                logger.error(traceback.format_exc())
+                raise
             
         except Exception as e:
             logger.error(f"Error processing get_resources request: {e}")
@@ -348,12 +434,23 @@ class AyaWebSocketServer:
 
     async def handler(self, websocket: websockets.WebSocketServerProtocol, path: str = None):
         """WebSocket connection handler"""
+        logger.info(f"New WebSocket connection from {websocket.remote_address}")
         await self.register(websocket)
         try:
             await self.handle_message(websocket)
+        except websockets.exceptions.ConnectionClosed as e:
+            logger.info(f"WebSocket connection closed normally: {e}")
         except Exception as e:
             logger.error(f"Error in handler: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
             logger.error(traceback.format_exc())
+            
+            # Send error to client if connection is still open
+            try:
+                if websocket.open:
+                    await self.send_error(f"Server error: {str(e)}", traceback.format_exc())
+            except Exception as send_error:
+                logger.error(f"Failed to send error to client: {send_error}")
         finally:
             await self.unregister(websocket)
 

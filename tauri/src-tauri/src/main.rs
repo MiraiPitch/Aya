@@ -90,6 +90,40 @@ async fn start_python_bridge_direct(
                 }
             }
             
+            // Start a background task to monitor the process
+            let process_id = process.id();
+            let window_clone = window.clone();
+            std::thread::spawn(move || {
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(10));
+                    
+                    // Check if process is still running (Windows-specific check)
+                    #[cfg(target_os = "windows")]
+                    {
+                        let output = std::process::Command::new("tasklist")
+                            .args(&["/FI", &format!("PID eq {}", process_id), "/FO", "CSV"])
+                            .output();
+                        
+                        match output {
+                            Ok(result) => {
+                                let stdout = String::from_utf8_lossy(&result.stdout);
+                                if !stdout.contains(&process_id.to_string()) {
+                                    println!("=== PYTHON PROCESS {} HAS EXITED ===", process_id);
+                                    let _ = window_clone.emit("python-bridge-status", false);
+                                    break;
+                                } else {
+                                    println!("=== PYTHON PROCESS {} STILL RUNNING ===", process_id);
+                                }
+                            },
+                            Err(e) => {
+                                println!("=== ERROR CHECKING PROCESS STATUS: {} ===", e);
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
+            
             state_guard.process = Some(process);
             state_guard.is_running = true;
             
