@@ -151,11 +151,16 @@ export const useWebSocket = (url: string) => {
     return false;
   }, []);
 
-  // Connect on mount, disconnect on unmount
+  // Connect on mount with delay, disconnect on unmount
   useEffect(() => {
-    connect();
+    // Add a delay to let the Python bridge start first
+    const initialConnectionTimer = setTimeout(() => {
+      console.log('=== INITIAL WEBSOCKET CONNECTION AFTER DELAY ===');
+      connect();
+    }, 1000); // 1 second delay
     
     return () => {
+      clearTimeout(initialConnectionTimer);
       disconnect();
     };
   }, [connect, disconnect]);

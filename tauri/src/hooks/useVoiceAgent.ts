@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { appWindow } from '@tauri-apps/api/window';
 import { 
-  AyaSettings, 
   AyaResources,
   StartCommand,
   StopCommand,
@@ -10,6 +9,9 @@ import {
 } from '../types';
 import { useWebSocket } from './useWebSocket';
 import { useSettingsStore } from '../store/settingsStore';
+
+// Check if running in Tauri context
+const isTauri = typeof window !== 'undefined' && (window as any).__TAURI__ !== undefined;
 
 export const useVoiceAgent = () => {
   const { settings, updateSettings, loaded } = useSettingsStore();
@@ -30,11 +32,17 @@ export const useVoiceAgent = () => {
   const startAgent = useCallback(async () => {
     try {
       console.log('=== START AGENT CALLED ===');
+      console.log('=== IS TAURI CONTEXT ===', isTauri);
       console.log('=== INVOKE FUNCTION ===', typeof invoke, invoke);
       
       // First start the Python bridge if not running
       if (!isRunning) {
         setStatus('starting');
+        
+        // Check if running in Tauri context
+        if (!isTauri) {
+          throw new Error('This app must be run in Tauri context, not in a browser');
+        }
         
         // Check if invoke is available
         if (typeof invoke !== 'function') {
@@ -123,6 +131,11 @@ export const useVoiceAgent = () => {
 
   // Listen for Python bridge status updates
   useEffect(() => {
+    if (!isTauri) {
+      console.log('=== NOT IN TAURI CONTEXT - SKIPPING BRIDGE EVENT LISTENER ===');
+      return;
+    }
+    
     const unsubscribe = appWindow.listen('python-bridge-status', (event) => {
       const isRunning = event.payload as boolean;
       setIsRunning(isRunning);
@@ -195,6 +208,11 @@ export const useVoiceAgent = () => {
 
   // Check if Python bridge is running on mount
   useEffect(() => {
+    if (!isTauri) {
+      console.log('=== NOT IN TAURI CONTEXT - SKIPPING BRIDGE STATUS CHECK ===');
+      return;
+    }
+    
     const checkBridgeStatus = async () => {
       try {
         const running = await invoke<boolean>('is_python_bridge_running');
@@ -216,7 +234,7 @@ export const useVoiceAgent = () => {
     };
     
     checkBridgeStatus();
-  }, [isConnected, fetchResources]);
+  }, [isConnected, fetchResources, isTauri]);
 
   return {
     isRunning,
