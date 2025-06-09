@@ -52,9 +52,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={(e) => handleChange('videoMode', e.target.value)}
             disabled={disabled}
           >
-            {resources?.videoModes.map(mode => (
-              <option key={mode} value={mode}>{mode}</option>
-            ))}
+            {resources?.videoModes && Array.isArray(resources.videoModes) ? 
+              resources.videoModes.map(mode => (
+                <option key={mode} value={mode}>{mode}</option>
+              )) : 
+              <option value="">Loading...</option>
+            }
           </select>
         </div>
         
@@ -66,9 +69,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={(e) => handleChange('audioSource', e.target.value)}
             disabled={disabled}
           >
-            {resources?.audioSources.map(source => (
-              <option key={source} value={source}>{source}</option>
-            ))}
+            {resources?.audioSources && Array.isArray(resources.audioSources) ? 
+              resources.audioSources.map(source => (
+                <option key={source} value={source}>{source}</option>
+              )) : 
+              <option value="">Loading...</option>
+            }
           </select>
         </div>
         
@@ -80,9 +86,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={(e) => handleChange('language', e.target.value)}
             disabled={disabled}
           >
-            {resources?.languages.map(lang => (
-              <option key={lang} value={lang}>{lang}</option>
-            ))}
+            {resources?.languages && Array.isArray(resources.languages) ? 
+              resources.languages.map(lang => (
+                <option key={lang} value={lang}>{lang}</option>
+              )) : 
+              <option value="">Loading...</option>
+            }
           </select>
         </div>
         
@@ -94,9 +103,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={(e) => handleChange('voice', e.target.value)}
             disabled={disabled}
           >
-            {resources?.voices.map(voice => (
-              <option key={voice} value={voice}>{voice}</option>
-            ))}
+            {resources?.voices && Array.isArray(resources.voices) ? 
+              resources.voices.map(voice => (
+                <option key={voice} value={voice}>{voice}</option>
+              )) : 
+              <option value="">Loading...</option>
+            }
           </select>
         </div>
         
@@ -108,9 +120,12 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
             onChange={(e) => handleChange('responseModality', e.target.value)}
             disabled={disabled}
           >
-            {resources?.responseModalities.map(modality => (
-              <option key={modality} value={modality}>{modality}</option>
-            ))}
+            {resources?.responseModalities && Array.isArray(resources.responseModalities) ? 
+              resources.responseModalities.map(modality => (
+                <option key={modality} value={modality}>{modality}</option>
+              )) : 
+              <option value="">Loading...</option>
+            }
           </select>
         </div>
         

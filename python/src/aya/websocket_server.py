@@ -185,12 +185,19 @@ class AyaWebSocketServer:
             
             # Extract configuration parameters from the client's config
             video_mode = config.get("videoMode", "none")
-            language_code = config.get("language", "en-US")
-            voice_name = config.get("voice", "Leda")
+            language_display = config.get("language", "English (US)")  # Display name from frontend
+            voice_display = config.get("voice", "Leda (Female)")  # Display name from frontend
             response_modality = config.get("responseModality", "AUDIO")
             audio_source = config.get("audioSource", "microphone")
             system_prompt_path = config.get("systemPrompt", "system_prompts/default/aya_default_tools_cli.txt")
             initial_message = config.get("initialMessage", "[CALL_START]")
+            
+            # Convert display names to actual values
+            language_code = LANGUAGES.get(language_display, "en-US")  # Convert display name to language code
+            voice_name = VOICES.get(voice_display, "Leda")  # Convert display name to voice name
+            
+            logger.info(f"Language: {language_display} -> {language_code}")
+            logger.info(f"Voice: {voice_display} -> {voice_name}")
             
             # Create Gemini configuration
             gemini_config = create_gemini_config(
@@ -303,13 +310,18 @@ class AyaWebSocketServer:
             # Get all available resources
             system_prompts = list_system_messages()
             
+            # Convert dictionaries to lists for frontend consumption
+            # Frontend will display these names and send them back in start commands
+            languages_list = list(LANGUAGES.keys())  # Display names like "English (US)"
+            voices_list = list(VOICES.keys())  # Display names like "Leda (Female)"
+            
             # Create the response with explicit type field
             resources = {
                 "type": "resources",  # Ensure this is set to "resources"
                 "resources": {
                     "systemPrompts": system_prompts,
-                    "languages": LANGUAGES,
-                    "voices": VOICES,
+                    "languages": languages_list,  # Now a list of display names
+                    "voices": voices_list,  # Now a list of display names
                     "audioSources": AUDIO_SOURCES,
                     "videoModes": VIDEO_MODES,
                     "responseModalities": MODALITIES

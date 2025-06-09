@@ -176,13 +176,24 @@ export const useVoiceAgent = () => {
       try {
         const running = await invoke<boolean>('is_python_bridge_running');
         setIsRunning(running);
+        
+        // If bridge is running but we're not connected, wait a bit and try again
+        if (running && !isConnected) {
+          console.log('=== PYTHON BRIDGE RUNNING BUT NOT CONNECTED, WAITING FOR CONNECTION ===');
+          setTimeout(() => {
+            if (!isConnected) {
+              console.log('=== STILL NOT CONNECTED, CHECKING AGAIN ===');
+              fetchResources();
+            }
+          }, 2000);
+        }
       } catch (err) {
         console.error('Error checking Python bridge status:', err);
       }
     };
     
     checkBridgeStatus();
-  }, []);
+  }, [isConnected, fetchResources]);
 
   return {
     isRunning,

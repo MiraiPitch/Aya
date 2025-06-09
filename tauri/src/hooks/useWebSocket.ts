@@ -11,10 +11,11 @@ export const useWebSocket = (url: string) => {
   // Connect to WebSocket
   const connect = useCallback(() => {
     try {
+      console.log(`=== ATTEMPTING WEBSOCKET CONNECTION TO: ${url} ===`);
       const socket = new WebSocket(url);
       
       socket.onopen = () => {
-        console.log('WebSocket connected');
+        console.log('=== WEBSOCKET CONNECTED SUCCESSFULLY ===');
         setIsConnected(true);
         setError(null);
         
@@ -34,30 +35,30 @@ export const useWebSocket = (url: string) => {
         }
       };
       
-      socket.onclose = () => {
-        console.log('WebSocket disconnected');
+      socket.onclose = (event) => {
+        console.log(`=== WEBSOCKET DISCONNECTED === Code: ${event.code}, Reason: ${event.reason}`);
         setIsConnected(false);
         
         // Attempt to reconnect after 2 seconds
         reconnectTimeoutRef.current = window.setTimeout(() => {
-          console.log('Attempting to reconnect...');
+          console.log('=== ATTEMPTING TO RECONNECT WEBSOCKET ===');
           connect();
         }, 2000);
       };
       
       socket.onerror = (err) => {
-        console.error('WebSocket error:', err);
+        console.error('=== WEBSOCKET ERROR ===', err);
         setError('WebSocket connection error');
       };
       
       socketRef.current = socket;
     } catch (err) {
-      console.error('Error creating WebSocket:', err);
+      console.error('=== ERROR CREATING WEBSOCKET ===', err);
       setError(`Failed to connect to WebSocket: ${err}`);
       
       // Attempt to reconnect after 2 seconds
       reconnectTimeoutRef.current = window.setTimeout(() => {
-        console.log('Attempting to reconnect...');
+        console.log('=== ATTEMPTING TO RECONNECT AFTER ERROR ===');
         connect();
       }, 2000);
     }

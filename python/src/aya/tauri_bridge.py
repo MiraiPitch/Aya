@@ -1,20 +1,15 @@
+#!/usr/bin/env python
 """
 Tauri Bridge for Aya AI Assistant
-Connects the Tauri frontend with the Aya AI Assistant through WebSocket
+This module serves as the entry point for the Tauri desktop application.
+It starts the WebSocket server that provides the interface between the Tauri frontend and Python backend.
 """
 
 import asyncio
 import logging
-import argparse
 import signal
 import sys
-from typing import Dict, Any, Optional
-
-from aya.live_loop import LiveLoop
 from aya.websocket_server import AyaWebSocketServer
-from aya.function_registry import get_declarations_for_functions
-from aya.utils import create_gemini_config
-from aya.gemini_tools import print_to_console, get_current_date_and_time
 
 # Configure logging
 logging.basicConfig(
@@ -23,134 +18,121 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-class AyaTauriBridge:
-    """Bridge between Tauri frontend and Aya AI Assistant"""
+# Global server instance
+server = None
+
+def signal_handler(signum, frame):
+    """Handle shutdown signals gracefully"""
+    logger.info(f"Received signal {signum}, shutting down...")
+    if server:
+        # Create a new event loop if we're not in one
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Stop the server
+        loop.run_until_complete(server.stop_server())
     
-    def __init__(self, host: str = "127.0.0.1", port: int = 8765):
-        """Initialize the bridge"""
-        self.host = host
-        self.port = port
-        self.websocket_server = AyaWebSocketServer(host, port)
-        self.live_loop: Optional[LiveLoop] = None
-        
-        # Set up callbacks
-        self.websocket_server.set_callbacks(
-            on_start=self.handle_start,
-            on_stop=self.handle_stop
-        )
-        
-        # Handle signals for graceful shutdown
-        for sig in (signal.SIGINT, signal.SIGTERM):
-            signal.signal(sig, self.handle_signal)
+    sys.exit(0)
 
-    def handle_signal(self, sig, frame):
-        """Handle termination signals"""
-        logger.info(f"Received signal {sig}, shutting down...")
-        asyncio.create_task(self.shutdown())
-
-    async def handle_start(self, config: Dict[str, Any]):
-        """Handle start command from WebSocket client"""
-        logger.info(f"Starting voice agent with config: {config}")
-        
-        # Configure tools
-        search_tool = {'google_search': {}}
-        code_execution_tool = {'code_execution': {}}
-        function_tools = {
-            'function_declarations': get_declarations_for_functions([
-                print_to_console,
-                get_current_date_and_time
-                # Add other functions here as needed
-            ])
-        }
-        tools = [search_tool, code_execution_tool, function_tools]
-        
-        # Extract configuration from request
-        video_mode = config.get("videoMode", "none")
-        audio_source = config.get("audioSource", "microphone")
-        system_prompt = config.get("systemPrompt", "system_prompts/default/aya_default_tools.txt")
-        language = config.get("language", "en-US")
-        voice = config.get("voice", "Leda")
-        response_modality = config.get("responseModality", "AUDIO")
-        initial_message = config.get("initialMessage", "[CALL_START]")
-        model = config.get("model", "models/gemini-2.0-flash-live-001")
-        
-        # Create Gemini configuration
-        gemini_config = create_gemini_config(
-            system_message_path=system_prompt,
-            language_code=language,
-            voice_name=voice,
-            response_modality=response_modality,
-            tools=tools,
-            temperature=0.05
-        )
-        
-        # Create and start LiveLoop
-        self.live_loop = LiveLoop(
-            video_mode=video_mode,
-            model=model,
-            config=gemini_config,
-            initial_message=initial_message,
-            audio_source=audio_source,
-            record_conversation=False
-        )
-        
-        # Connect LiveLoop status updates to WebSocket
-        self.live_loop.on_status_change = self.handle_status_change
-        
-        # Start LiveLoop
-        asyncio.create_task(self.live_loop.run())
-        
-        await self.websocket_server.update_status("listening")
-        return True
-
-    async def handle_stop(self):
-        """Handle stop command from WebSocket client"""
-        logger.info("Stopping voice agent")
-        
-        if self.live_loop:
-            await self.live_loop.stop()
-            self.live_loop = None
-            
-        await self.websocket_server.update_status("idle")
-        return True
-
-    async def handle_status_change(self, status: str, data: Dict[str, Any] = None):
-        """Handle status change from LiveLoop"""
-        await self.websocket_server.update_status(status, data)
-
-    async def run(self):
-        """Run the bridge"""
-        await self.websocket_server.start_server()
+async def main():
+    """Main function to start the Tauri bridge"""
+    global server
+    
+    print("=== TAURI BRIDGE STARTING ===")
+    logger.info("Starting Aya Tauri Bridge...")
+    
+    # Check if port is already in use
+    import socket
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("127.0.0.1", 8765))
+        sock.close()
+        print("=== PORT 8765 IS AVAILABLE ===")
+    except OSError as e:
+        print(f"=== PORT 8765 IS IN USE: {e} ===")
+        logger.error(f"Port 8765 is already in use: {e}")
+        # Try to continue anyway, might be from a previous run
+    
+    # Create WebSocket server instance with debug enabled
+    server = AyaWebSocketServer(
+        host="127.0.0.1",
+        port=8765,
+        debug=True  # Enable debug logging
+    )
+    print(f"=== WebSocket server instance created at 127.0.0.1:8765 ===")
+    
+    # Set up custom callbacks for start/stop commands
+    async def on_start(config):
+        """Callback when start command is received"""
+        logger.info(f"Starting LiveLoop with config: {config}")
+        if server.live_loop:
+            server.live_loop_task = asyncio.create_task(server.live_loop.run())
+            server.live_loop_task.add_done_callback(server._live_loop_done_callback)
+    
+    async def on_stop():
+        """Callback when stop command is received"""
+        logger.info("Stopping LiveLoop")
+        if server.live_loop:
+            try:
+                if hasattr(server.live_loop, 'stop') and callable(server.live_loop.stop):
+                    await server.live_loop.stop()
+                
+                if server.live_loop_task and not server.live_loop_task.done():
+                    server.live_loop_task.cancel()
+                    try:
+                        await asyncio.wait_for(server.live_loop_task, timeout=5.0)
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        logger.warning("LiveLoop task cancellation timed out")
+            except Exception as e:
+                logger.error(f"Error stopping LiveLoop: {e}")
+            finally:
+                server.live_loop = None
+                server.live_loop_task = None
+    
+    # Set callbacks
+    server.set_callbacks(on_start=on_start, on_stop=on_stop)
+    
+    try:
+        # Start the WebSocket server
+        print("=== ATTEMPTING TO START WEBSOCKET SERVER ===")
+        await server.start_server()
+        print("=== WEBSOCKET SERVER STARTED SUCCESSFULLY ===")
+        logger.info("Tauri Bridge started successfully - WebSocket server listening on ws://127.0.0.1:8765")
         
         # Keep the server running
         while True:
             await asyncio.sleep(1)
-
-    async def shutdown(self):
-        """Shutdown the bridge"""
-        if self.live_loop:
-            await self.live_loop.stop()
             
-        await self.websocket_server.stop_server()
-        asyncio.get_event_loop().stop()
-
-def main():
-    """Main entry point for the Tauri bridge"""
-    parser = argparse.ArgumentParser(description="Aya AI Assistant Tauri Bridge")
-    parser.add_argument("--host", type=str, default="127.0.0.1", help="WebSocket server host")
-    parser.add_argument("--port", type=int, default=8765, help="WebSocket server port")
-    args = parser.parse_args()
-    
-    bridge = AyaTauriBridge(args.host, args.port)
-    
-    try:
-        asyncio.run(bridge.run())
-    except KeyboardInterrupt:
-        logger.info("Interrupted by user, shutting down...")
-        sys.exit(0)
+    except asyncio.CancelledError:
+        logger.info("Bridge cancelled")
     except Exception as e:
-        logger.exception(f"Error in bridge: {e}")
-        sys.exit(1)
+        logger.error(f"Error in Tauri Bridge: {e}")
+        raise
+    finally:
+        logger.info("Stopping Tauri Bridge...")
+        if server:
+            await server.stop_server()
 
 if __name__ == "__main__":
-    main() 
+    print("=== TAURI BRIDGE ENTRY POINT ===")
+    print(f"Python version: {sys.version}")
+    print(f"Command line args: {sys.argv}")
+    
+    # Set up signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+    
+    try:
+        # Run the bridge
+        print("=== STARTING ASYNCIO EVENT LOOP ===")
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("=== BRIDGE STOPPED BY USER ===")
+        logger.info("Bridge stopped by user")
+    except Exception as e:
+        print(f"=== UNHANDLED ERROR: {e} ===")
+        logger.error(f"Unhandled error in Tauri Bridge: {e}")
+        sys.exit(1) 

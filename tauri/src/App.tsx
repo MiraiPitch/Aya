@@ -50,7 +50,7 @@ function App() {
       </main>
       
       <footer className="app-footer">
-        <p>Aya Voice Assistant &copy; 2023 MiraiPitch</p>
+        <p>Aya Voice Assistant &copy; 2025 MiraiPitch</p>
       </footer>
     </div>
   );
