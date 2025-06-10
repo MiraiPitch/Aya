@@ -23,18 +23,26 @@ server = None
 
 def signal_handler(signum, frame):
     """Handle shutdown signals gracefully"""
-    logger.info(f"Received signal {signum}, shutting down...")
+    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
     if server:
         # Create a new event loop if we're not in one
         try:
             loop = asyncio.get_event_loop()
+            if loop.is_closed():
+                raise RuntimeError("Event loop is closed")
         except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
         
-        # Stop the server
-        loop.run_until_complete(server.stop_server())
+        # Stop the server gracefully
+        try:
+            logger.info("Stopping WebSocket server...")
+            loop.run_until_complete(server.stop_server())
+            logger.info("WebSocket server stopped")
+        except Exception as e:
+            logger.error(f"Error stopping server: {e}")
     
+    logger.info("Graceful shutdown completed")
     sys.exit(0)
 
 async def main():
@@ -74,23 +82,10 @@ async def main():
     
     async def on_stop():
         """Callback when stop command is received"""
-        logger.info("Stopping LiveLoop")
-        if server.live_loop:
-            try:
-                if hasattr(server.live_loop, 'stop') and callable(server.live_loop.stop):
-                    await server.live_loop.stop()
-                
-                if server.live_loop_task and not server.live_loop_task.done():
-                    server.live_loop_task.cancel()
-                    try:
-                        await asyncio.wait_for(server.live_loop_task, timeout=5.0)
-                    except (asyncio.CancelledError, asyncio.TimeoutError):
-                        logger.warning("LiveLoop task cancellation timed out")
-            except Exception as e:
-                logger.error(f"Error stopping LiveLoop: {e}")
-            finally:
-                server.live_loop = None
-                server.live_loop_task = None
+        logger.info("Tauri bridge stop callback - performing any bridge-specific cleanup")
+        # The WebSocket server will handle calling LiveLoop.stop() 
+        # This callback is just for any bridge-specific operations
+        # No LiveLoop cleanup needed here since LiveLoop handles its own cleanup
     
     # Set callbacks
     server.set_callbacks(on_start=on_start, on_stop=on_stop)

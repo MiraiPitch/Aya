@@ -126,6 +126,7 @@ class AyaWebSocketServer:
         status_message = {
             "type": "status",
             "status": status,
+            "isRunning": self.is_running,
             "timestamp": asyncio.get_event_loop().time()
         }
         
@@ -149,7 +150,17 @@ class AyaWebSocketServer:
                         await self.handle_start_command(config)
                     
                     elif command == "stop":
-                        await self.handle_stop_command()
+                        try:
+                            await self.handle_stop_command()
+                        except Exception as stop_error:
+                            logger.error(f"Error in stop command: {stop_error}")
+                            logger.error(traceback.format_exc())
+                            # Send error but don't crash the connection
+                            await websocket.send(json.dumps({
+                                "type": "error",
+                                "error": f"Stop command failed: {str(stop_error)}",
+                                "timestamp": asyncio.get_event_loop().time()
+                            }))
                     
                     elif command == "get_resources":
                         # Ensure this command is handled immediately
@@ -166,7 +177,11 @@ class AyaWebSocketServer:
                         continue  # Skip sending status update
                     
                     # Send status update after handling other commands
-                    await self.send_status_to_client(websocket)
+                    try:
+                        await self.send_status_to_client(websocket)
+                    except Exception as status_error:
+                        logger.error(f"Error sending status update: {status_error}")
+                        # Don't re-raise - just log the error
                     
                 except json.JSONDecodeError:
                     logger.error(f"Invalid JSON received: {message_str}")
@@ -292,17 +307,30 @@ class AyaWebSocketServer:
         try:
             # Check for exceptions
             future.result()
+            logger.info("LiveLoop task completed successfully")
         except asyncio.CancelledError:
             logger.info("LiveLoop task was cancelled")
         except Exception as e:
             logger.error(f"LiveLoop task failed with error: {e}")
             logger.error(traceback.format_exc())
+            # Send error to clients but don't crash the server
+            try:
+                asyncio.create_task(self.send_error(f"LiveLoop error: {str(e)}", traceback.format_exc()))
+            except Exception as send_error:
+                logger.error(f"Failed to send LiveLoop error to clients: {send_error}")
         finally:
             # Reset state if not already done
             if self.is_running:
                 self.is_running = False
                 # Use create_task to run the coroutine
-                asyncio.create_task(self.update_status("idle"))
+                try:
+                    asyncio.create_task(self.update_status("idle"))
+                except Exception as status_error:
+                    logger.error(f"Failed to update status after LiveLoop completion: {status_error}")
+            
+            # Clear references
+            self.live_loop = None
+            self.live_loop_task = None
 
     async def handle_stop_command(self):
         """Handle stop command from client"""
@@ -315,43 +343,59 @@ class AyaWebSocketServer:
                 })
                 return
                 
+            logger.info("Stopping voice agent...")
             await self.update_status("stopping")
             
-            if self.on_stop_callback:
-                await self.on_stop_callback()
-            elif self.live_loop:
-                # Properly clean up the LiveLoop
-                try:
-                    # First stop the LiveLoop
-                    if hasattr(self.live_loop, 'stop') and callable(self.live_loop.stop):
-                        await self.live_loop.stop()
-                    
-                    # Then cancel the task if it exists and is still running
-                    if self.live_loop_task and not self.live_loop_task.done():
-                        self.live_loop_task.cancel()
-                        try:
-                            await asyncio.wait_for(self.live_loop_task, timeout=5.0)
-                        except (asyncio.CancelledError, asyncio.TimeoutError):
-                            logger.warning("LiveLoop task cancellation timed out or was cancelled")
-                except Exception as e:
-                    logger.error(f"Error stopping LiveLoop: {e}")
-                    logger.error(traceback.format_exc())
-                
-                # Clear the references
-                self.live_loop = None
-                self.live_loop_task = None
-                
+            # Set running to false first to prevent other operations
             self.is_running = False
+            
+            # Use the callback if available for any special handling
+            try:
+                if self.on_stop_callback:
+                    logger.info("Using stop callback")
+                    await self.on_stop_callback()
+            except Exception as e:
+                logger.error(f"Error in stop callback: {e}")
+                logger.error(traceback.format_exc())
+            
+            # Let the LiveLoop handle its own cleanup
+            if self.live_loop:
+                logger.info("Stopping LiveLoop...")
+                await self.live_loop.stop()
+            
+            # Clear references
+            self.live_loop = None
+            if self.live_loop_task and not self.live_loop_task.done():
+                self.live_loop_task.cancel()
+                try:
+                    await asyncio.wait_for(self.live_loop_task, timeout=2.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    logger.warning("LiveLoop task cancellation timed out")
+            self.live_loop_task = None
+            
+            logger.info("Voice agent stopped successfully")
             await self.update_status("idle")
         
         except Exception as e:
-            logger.exception("Error stopping voice agent")
-            await self.send_error(str(e), traceback.format_exc())
-            # Try to clean up anyway
+            logger.error(f"Error in handle_stop_command: {e}")
+            logger.error(traceback.format_exc())
+            
+            # Always reset state even if there was an error
+            self.is_running = False
             self.live_loop = None
             self.live_loop_task = None
-            self.is_running = False
-            await self.update_status("idle")
+            
+            # Send error to clients but don't let it crash the connection
+            try:
+                await self.send_error(f"Error stopping voice agent: {str(e)}", traceback.format_exc())
+            except Exception as send_error:
+                logger.error(f"Failed to send error message: {send_error}")
+            
+            # Still try to update status
+            try:
+                await self.update_status("idle")
+            except Exception as status_error:
+                logger.error(f"Failed to update status: {status_error}")
 
     async def handle_get_resources(self, websocket: websockets.WebSocketServerProtocol):
         """Handle request for available resources"""

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/tauri';
 import { appWindow } from '@tauri-apps/api/window';
 import { 
   AyaResources,
@@ -32,54 +32,32 @@ export const useVoiceAgent = () => {
   const startAgent = useCallback(async () => {
     try {
       console.log('=== START AGENT CALLED ===');
-      console.log('=== IS TAURI CONTEXT ===', isTauri);
-      console.log('=== INVOKE FUNCTION ===', typeof invoke, invoke);
       
-      // First start the Python bridge if not running
-      if (!isRunning) {
-        setStatus('starting');
-        
-        // Check if running in Tauri context
-        if (!isTauri) {
-          throw new Error('This app must be run in Tauri context, not in a browser');
-        }
-        
-        // Check if invoke is available
-        if (typeof invoke !== 'function') {
-          throw new Error('Tauri invoke function is not available');
-        }
-        
-        // Start the Python bridge via Tauri
-        console.log('=== CALLING TAURI INVOKE ===');
-        await invoke('start_python_bridge');
-        
-        // Wait for WebSocket connection
-        if (!isConnected) {
-          // Wait up to 5 seconds for connection
-          let attempts = 0;
-          while (!isConnected && attempts < 10) {
-            await new Promise(resolve => setTimeout(resolve, 500));
-            attempts++;
-          }
-          
-          if (!isConnected) {
-            throw new Error('Failed to connect to Python bridge');
-          }
-        }
-        
-        // Send start command via WebSocket
-        const startCommand: StartCommand = {
-          command: 'start',
-          config: settings
-        };
-        
-        const success = sendMessage(startCommand);
-        if (!success) {
-          throw new Error('Failed to send start command to Python bridge');
-        }
-        
-        setIsRunning(true);
+      if (isRunning) {
+        console.log('=== VOICE AGENT ALREADY RUNNING ===');
+        return;
       }
+      
+      setStatus('starting');
+      
+      // Check if WebSocket is connected
+      if (!isConnected) {
+        throw new Error('Not connected to Python bridge. Please wait for connection.');
+      }
+      
+      // Send start command via WebSocket
+      const startCommand: StartCommand = {
+        command: 'start',
+        config: settings
+      };
+      
+      const success = sendMessage(startCommand);
+      if (!success) {
+        throw new Error('Failed to send start command to Python bridge');
+      }
+      
+      console.log('=== START COMMAND SENT VIA WEBSOCKET ===');
+      
     } catch (err) {
       console.error('Error starting voice agent:', err);
       setError(`Failed to start voice agent: ${err}`);
@@ -90,28 +68,35 @@ export const useVoiceAgent = () => {
   // Stop the voice agent
   const stopAgent = useCallback(async () => {
     try {
-      if (isRunning) {
-        setStatus('stopping');
-        
-        // Send stop command via WebSocket
-        const stopCommand: StopCommand = {
-          command: 'stop'
-        };
-        
-        const success = sendMessage(stopCommand);
-        if (!success) {
-          // Try to stop directly via Tauri if WebSocket fails
-          await invoke('stop_python_bridge');
-        }
-        
-        setIsRunning(false);
-        setStatus('idle');
+      if (!isRunning) {
+        console.log('=== VOICE AGENT NOT RUNNING ===');
+        return;
       }
+      
+      setStatus('stopping');
+      
+      // Check if WebSocket is connected
+      if (!isConnected) {
+        throw new Error('Not connected to Python bridge. Cannot send stop command.');
+      }
+      
+      // Send stop command via WebSocket
+      const stopCommand: StopCommand = {
+        command: 'stop'
+      };
+      
+      const success = sendMessage(stopCommand);
+      if (!success) {
+        throw new Error('Failed to send stop command to Python bridge');
+      }
+      
+      console.log('=== STOP COMMAND SENT VIA WEBSOCKET ===');
+      
     } catch (err) {
       console.error('Error stopping voice agent:', err);
       setError(`Failed to stop voice agent: ${err}`);
     }
-  }, [isRunning, sendMessage]);
+  }, [isConnected, isRunning, sendMessage]);
 
   // Request resources from the Python bridge
   const fetchResources = useCallback(() => {
@@ -129,7 +114,7 @@ export const useVoiceAgent = () => {
     setError(null);
   }, []);
 
-  // Listen for Python bridge status updates
+  // Listen for Python bridge status updates (but don't set voice agent running state)
   useEffect(() => {
     if (!isTauri) {
       console.log('=== NOT IN TAURI CONTEXT - SKIPPING BRIDGE EVENT LISTENER ===');
@@ -137,12 +122,11 @@ export const useVoiceAgent = () => {
     }
     
     const unsubscribe = appWindow.listen('python-bridge-status', (event) => {
-      const isRunning = event.payload as boolean;
-      setIsRunning(isRunning);
+      const bridgeIsRunning = event.payload as boolean;
+      console.log('=== PYTHON BRIDGE STATUS UPDATE ===', bridgeIsRunning);
       
-      if (!isRunning) {
-        setStatus('idle');
-      }
+      // Don't set voice agent running state based on bridge status
+      // The voice agent running state should only be controlled by WebSocket status messages
     });
     
     return () => {
@@ -206,7 +190,7 @@ export const useVoiceAgent = () => {
     }
   }, [isConnected, resources, fetchResources]);
 
-  // Check if Python bridge is running on mount
+  // Check if Python bridge is running on mount (but don't set voice agent state)
   useEffect(() => {
     if (!isTauri) {
       console.log('=== NOT IN TAURI CONTEXT - SKIPPING BRIDGE STATUS CHECK ===');
@@ -215,11 +199,14 @@ export const useVoiceAgent = () => {
     
     const checkBridgeStatus = async () => {
       try {
-        const running = await invoke<boolean>('is_python_bridge_running');
-        setIsRunning(running);
+        const bridgeRunning = await invoke<boolean>('is_python_bridge_running');
+        console.log('=== PYTHON BRIDGE RUNNING STATUS ===', bridgeRunning);
+        
+        // Don't set voice agent running state based on bridge status
+        // The voice agent running state should only be controlled by WebSocket status messages
         
         // If bridge is running but we're not connected, wait a bit and try again
-        if (running && !isConnected) {
+        if (bridgeRunning && !isConnected) {
           console.log('=== PYTHON BRIDGE RUNNING BUT NOT CONNECTED, WAITING FOR CONNECTION ===');
           setTimeout(() => {
             if (!isConnected) {

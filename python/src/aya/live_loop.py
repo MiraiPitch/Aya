@@ -119,12 +119,15 @@ class LiveLoop:
         self.recorder = None
         self.recording_file = None
 
-        self.send_text_task = None
-        self.receive_audio_task = None
-        self.play_audio_task = None
+        # Task tracking for proper cleanup
+        self.task_group = None
+        self.running_tasks = set()
+        self.is_stopping = False
+        self.is_running = False
         
         # Status change callback for Tauri integration
         self.on_status_change: Optional[Callable[[str, Dict[str, Any]], None]] = None
+        self.on_stop_callback: Optional[Callable[[], None]] = None
         
         # Status tracking
         self.current_status = "idle"
@@ -166,14 +169,23 @@ class LiveLoop:
                 print(f"Error saving recording: {e}")
 
     async def send_text(self):
-        while True:
-            text = await asyncio.to_thread(
-                input,
-                "", # "message > "
-            )
-            if text.lower() == "q":
+        while not self.is_stopping:
+            try:
+                text = await asyncio.to_thread(
+                    input,
+                    "", # "message > "
+                )
+                if self.is_stopping:
+                    break
+                if text.lower() == "q":
+                    break
+                await self.session.send(input=text or ".", end_of_turn=True)
+            except asyncio.CancelledError:
                 break
-            await self.session.send(input=text or ".", end_of_turn=True)
+            except Exception as e:
+                if not self.is_stopping:
+                    print(f"Error in send_text: {e}")
+                break
             # await self.session.send_realtime_input(input=text or ".", end_of_turn=True)
 
     def _get_frame(self, cap):
@@ -204,14 +216,24 @@ class LiveLoop:
             cv2.VideoCapture, 0
         )  # 0 represents the default camera
 
-        while True:
-            frame = await asyncio.to_thread(self._get_frame, cap)
-            if frame is None:
+        while not self.is_stopping:
+            try:
+                frame = await asyncio.to_thread(self._get_frame, cap)
+                if frame is None or self.is_stopping:
+                    break
+
+                await asyncio.sleep(1.0)
+                
+                if self.is_stopping:
+                    break
+
+                await self.out_queue.put(frame)
+            except asyncio.CancelledError:
                 break
-
-            await asyncio.sleep(1.0)
-
-            await self.out_queue.put(frame)
+            except Exception as e:
+                if not self.is_stopping:
+                    print(f"Error capturing camera frame: {e}")
+                break
 
         # Release the VideoCapture object
         cap.release()
@@ -234,19 +256,38 @@ class LiveLoop:
         return {"mime_type": mime_type, "data": base64.b64encode(image_bytes).decode()}
 
     async def get_screen(self):
-        while True:
-            frame = await asyncio.to_thread(self._get_screen)
-            if frame is None:
+        while not self.is_stopping:
+            try:
+                frame = await asyncio.to_thread(self._get_screen)
+                if frame is None or self.is_stopping:
+                    break
+
+                await asyncio.sleep(1.0)
+                
+                if self.is_stopping:
+                    break
+
+                await self.out_queue.put(frame)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                if not self.is_stopping:
+                    print(f"Error capturing screen: {e}")
                 break
 
-            await asyncio.sleep(1.0)
-
-            await self.out_queue.put(frame)
-
     async def send_realtime(self):
-        while True:
-            msg = await self.out_queue.get()
-            await self.session.send(input=msg)
+        while not self.is_stopping:
+            try:
+                msg = await self.out_queue.get()
+                if self.is_stopping:
+                    break
+                await self.session.send(input=msg)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                if not self.is_stopping:
+                    print(f"Error sending realtime data: {e}")
+                break
             # await self.session.send_realtime_input(input=msg)
 
     def _mix_audio(self, mic_data, system_data):
@@ -379,14 +420,24 @@ class LiveLoop:
             kwargs = {"exception_on_overflow": False}
         else:
             kwargs = {}
-        while True:
-            data = await asyncio.to_thread(self.mic_stream.read, CHUNK_SIZE, **kwargs)
-            
-            # Save to recording buffer if enabled
-            if self.record_conversation:
-                self.recording_buffer.append(data)
+        while not self.is_stopping:
+            try:
+                data = await asyncio.to_thread(self.mic_stream.read, CHUNK_SIZE, **kwargs)
                 
-            await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
+                if self.is_stopping:
+                    break
+                    
+                # Save to recording buffer if enabled
+                if self.record_conversation:
+                    self.recording_buffer.append(data)
+                    
+                await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                if not self.is_stopping:
+                    print(f"Error reading microphone audio: {e}")
+                break
 
     async def _listen_system_audio(self):
         """Capture audio from the system/computer"""
@@ -451,9 +502,12 @@ class LiveLoop:
             else:
                 kwargs = {}
                 
-            while True:
+            while not self.is_stopping:
                 try:
                     data = await asyncio.to_thread(self.system_stream.read, self.system_buffer_size, **kwargs)
+                    
+                    if self.is_stopping:
+                        break
                     
                     # Resample if needed
                     if self.system_sample_rate != SEND_SAMPLE_RATE:
@@ -468,8 +522,11 @@ class LiveLoop:
                         self.recording_buffer.append(data)
                         
                     await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
+                except asyncio.CancelledError:
+                    break
                 except Exception as e:
-                    print(f"Error reading from system audio stream: {e}")
+                    if not self.is_stopping:
+                        print(f"Error reading from system audio stream: {e}")
                     break
                 
         except RuntimeError as e:
@@ -603,10 +660,13 @@ class LiveLoop:
             else:
                 kwargs = {}
                 
-            while True:
+            while not self.is_stopping:
                 try:
                     mic_data = await asyncio.to_thread(self.mic_stream.read, CHUNK_SIZE, **kwargs)
                     system_data = await asyncio.to_thread(self.system_stream.read, self.system_buffer_size, **kwargs)
+                    
+                    if self.is_stopping:
+                        break
                     
                     # Resample system audio if needed
                     if self.system_sample_rate != SEND_SAMPLE_RATE:
@@ -620,15 +680,19 @@ class LiveLoop:
                         self.recording_buffer.append(mixed_data)
                         
                     await self.out_queue.put({"data": mixed_data, "mime_type": "audio/pcm"})
+                except asyncio.CancelledError:
+                    break
                 except Exception as e:
-                    print(f"Error reading or mixing audio streams: {e}")
+                    if not self.is_stopping:
+                        print(f"Error reading or mixing audio streams: {e}")
                     break
                 
         except Exception as e:
-            print(f"Error capturing mixed audio: {e}")
-            # Fall back to microphone if mixing fails
-            print("Falling back to microphone audio")
-            await self._listen_microphone()
+            if not self.is_stopping:
+                print(f"Error capturing mixed audio: {e}")
+                # Fall back to microphone if mixing fails
+                print("Falling back to microphone audio")
+                await self._listen_microphone()
 
     async def handle_tool_calls(self, tool_calls):
         """Handle tool calls from the Gemini API"""
@@ -660,7 +724,9 @@ class LiveLoop:
 
     def output_text(self, text):
         # Can be overridden to output text elsewhere, e.g. to a GUI
-        print(text, end="")
+        # Don't output if we're stopping
+        if not self.is_stopping:
+            print(text, end="")
 
     async def _process_chunk(self, chunk):
         """Process a chunk from the session, handling text, code execution, and tool calls."""
@@ -687,58 +753,129 @@ class LiveLoop:
 
     async def receive_text(self):
         """Background task to handle text responses and tool calls."""
-        while True:
-            turn = self.session.receive()
-            async for chunk in turn:
-                await self._process_chunk(chunk)
+        while not self.is_stopping:
+            try:
+                turn = self.session.receive()
+                async for chunk in turn:
+                    if self.is_stopping:
+                        break
+                    await self._process_chunk(chunk)
+                if self.is_stopping:
+                    break
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                if not self.is_stopping:
+                    print(f"Error in receive_text: {e}")
+                break
 
     async def receive_audio(self):
         """Background task to handle audio responses and tool calls."""
-        while True:
-            turn = self.session.receive()
-            async for chunk in turn:
-                # Audio-specific handling
-                if chunk.server_content and chunk.data is not None:
-                    self.audio_in_queue.put_nowait(chunk.data)
-                await self._process_chunk(chunk)
+        while not self.is_stopping:
+            try:
+                turn = self.session.receive()
+                async for chunk in turn:
+                    if self.is_stopping:
+                        break
+                    # Audio-specific handling
+                    if chunk.server_content and chunk.data is not None:
+                        self.audio_in_queue.put_nowait(chunk.data)
+                    await self._process_chunk(chunk)
+                
+                if self.is_stopping:
+                    break
 
-            # If you interrupt the model, it sends a turn_complete.
-            # For interruptions to work, we need to stop playback.
-            # So empty out the audio queue because it may have loaded much more audio than has played yet.
+                # If you interrupt the model, it sends a turn_complete.
+                # For interruptions to work, we need to stop playback.
+                # So empty out the audio queue because it may have loaded much more audio than has played yet.
+                await self.empty_audio_in_queue()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                if not self.is_stopping:
+                    print(f"Error in receive_audio: {e}")
+                break
+    
+    async def empty_audio_in_queue(self):
+        if self.audio_in_queue is None:
+            return
+        try:
+            # Empty the queue without blocking
             while not self.audio_in_queue.empty():
-                self.audio_in_queue.get_nowait()
+                try:
+                    self.audio_in_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+            print("Audio queue emptied")
+        except Exception as e:
+            print(f"Error emptying audio queue: {e}")
 
     async def play_audio(self):
-        stream = await asyncio.to_thread(
-            pya.open,
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=RECEIVE_SAMPLE_RATE,
-            output=True,
-        )
-        while True:
-            bytestream = await self.audio_in_queue.get()
-            await asyncio.to_thread(stream.write, bytestream)
+        stream = None
+        try:
+            stream = await asyncio.to_thread(
+                pya.open,
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RECEIVE_SAMPLE_RATE,
+                output=True,
+            )
             
-            # Append model's audio to recording if enabled
-            if self.record_conversation:
-                # Need to resample from RECEIVE_SAMPLE_RATE to SEND_SAMPLE_RATE for consistent recording
-                if RECEIVE_SAMPLE_RATE != SEND_SAMPLE_RATE:
-                    # Simple resampling: just take every other sample if downsampling by half
-                    if RECEIVE_SAMPLE_RATE == 2 * SEND_SAMPLE_RATE:
-                        # Convert bytes to samples, take every other sample, convert back to bytes
-                        samples = struct.unpack(f"{len(bytestream)//2}h", bytestream)
-                        resampled = struct.pack(f"{len(samples)//2}h", *samples[::2])
-                        self.recording_buffer.append(resampled)
-                    else:
-                        # For other rates, just append as-is (this will cause speed/pitch issues)
-                        self.recording_buffer.append(bytestream)
-                else:
-                    self.recording_buffer.append(bytestream)
-
+            while not self.is_stopping:
+                try:
+                    # Use a timeout to prevent infinite blocking
+                    bytestream = await asyncio.wait_for(
+                        self.audio_in_queue.get(),
+                        timeout=0.5
+                    )
+                    
+                    if self.is_stopping:
+                        break
+                        
+                    await asyncio.to_thread(stream.write, bytestream)
+                    
+                    # Append model's audio to recording if enabled
+                    if self.record_conversation and not self.is_stopping:
+                        # Need to resample from RECEIVE_SAMPLE_RATE to SEND_SAMPLE_RATE for consistent recording
+                        if RECEIVE_SAMPLE_RATE != SEND_SAMPLE_RATE:
+                            # Simple resampling: just take every other sample if downsampling by half
+                            if RECEIVE_SAMPLE_RATE == 2 * SEND_SAMPLE_RATE:
+                                # Convert bytes to samples, take every other sample, convert back to bytes
+                                samples = struct.unpack(f"{len(bytestream)//2}h", bytestream)
+                                resampled = struct.pack(f"{len(samples)//2}h", *samples[::2])
+                                self.recording_buffer.append(resampled)
+                            else:
+                                # For other rates, just append as-is (this will cause speed/pitch issues)
+                                self.recording_buffer.append(bytestream)
+                        else:
+                            self.recording_buffer.append(bytestream)
+                            
+                except asyncio.TimeoutError:
+                    # Timeout is expected when queue is empty - continue loop
+                    continue
+                except asyncio.CancelledError:
+                    break
+                except Exception as e:
+                    if not self.is_stopping:
+                        print(f"Error playing audio: {e}")
+                    break
+                    
+        except Exception as e:
+            if not self.is_stopping:
+                print(f"Error initializing audio playback: {e}")
+        finally:
+            if stream:
+                try:
+                    stream.close()
+                    print("Audio playback stream closed")
+                except Exception as e:
+                    print(f"Error closing audio playback stream: {e}")
 
     async def run(self):
         self._set_status("starting")
+        self.is_running = True
+        self.is_stopping = False
+        
         try:
             # Initialize recording if enabled
             if self.record_conversation:
@@ -749,70 +886,193 @@ class LiveLoop:
                 asyncio.TaskGroup() as tg,
             ):
                 self.session = session
+                self.task_group = tg
 
                 self.audio_in_queue = asyncio.Queue()
                 self.out_queue = asyncio.Queue(maxsize=5)
 
-                tg.create_task(self.send_realtime())
+                # Create and track all tasks
+                self._create_task(self.send_realtime(), "send_realtime")
 
                 # MODEL AUDIO INPUT
                 if self.audio_source != "none":
-                    tg.create_task(self.listen_audio())
+                    self._create_task(self.listen_audio(), "listen_audio")
 
                 # MODEL VIDEO INPUT
                 if self.video_mode == "camera":
-                    tg.create_task(self.get_frames())
+                    self._create_task(self.get_frames(), "get_frames")
                 elif self.video_mode == "screen":
-                    tg.create_task(self.get_screen())
+                    self._create_task(self.get_screen(), "get_screen")
 
                 # MODEL OUTPUT
                 if "AUDIO" in self.config.response_modalities:
-                    tg.create_task(self.receive_audio())
-                    tg.create_task(self.play_audio())
+                    self._create_task(self.receive_audio(), "receive_audio")
+                    self._create_task(self.play_audio(), "play_audio")
                 elif "TEXT" in self.config.response_modalities:
-                    tg.create_task(self.receive_text())
+                    self._create_task(self.receive_text(), "receive_text")
                 else:
                     raise ValueError("Invalid response modality")
 
                 if self.initial_message:
                     print(f"Sending initial message: {self.initial_message}")
                     await self.session.send(input=self.initial_message, end_of_turn=True)
-                send_text_task = tg.create_task(self.send_text())
+                
+                send_text_task = self._create_task(self.send_text(), "send_text")
 
                 self._set_status("call in progress")
 
-                await send_text_task
-                raise asyncio.CancelledError("User requested exit")
+                # Wait for the send_text task or until we're asked to stop
+                try:
+                    await send_text_task
+                except asyncio.CancelledError:
+                    if not self.is_stopping:
+                        print("LiveLoop send_text task was cancelled")
+                    # This is expected when stopping
+                    pass
+                
+                # If we reach here normally (not from stop()), initiate stopping
+                if not self.is_stopping:
+                    print("LiveLoop completed normally, initiating stop")
+                    await self.stop()
 
         except asyncio.CancelledError:
-            pass
+            if not self.is_stopping:
+                print("LiveLoop was cancelled externally")
         except ExceptionGroup as EG:
-            traceback.print_exception(EG)
+            if not self.is_stopping:
+                print("LiveLoop encountered ExceptionGroup:")
+                traceback.print_exception(EG)
+        except Exception as e:
+            if not self.is_stopping:
+                print(f"Error in LiveLoop: {e}")
+                traceback.print_exception(e)
+            # Set error status if not already stopping
+            if not self.is_stopping:
+                try:
+                    self._set_status("error")
+                except:
+                    pass
         finally:
-            # Clean up audio streams
-            if self.mic_stream:
-                self.mic_stream.close()
-            if self.system_stream:
-                self.system_stream.close()
-                
-            # Save recording if enabled
-            if self.record_conversation:
-                self._save_recording() 
-                
-            self._set_status("idle")
-                
+            # Ensure cleanup always happens
+            if not self.is_stopping:
+                print("LiveLoop run() finished, performing final cleanup")
+                try:
+                    await self._cleanup()
+                except Exception as cleanup_error:
+                    print(f"Error in final cleanup: {cleanup_error}")
+                    traceback.print_exception(cleanup_error)
+
     async def stop(self):
         """Stop the LiveLoop and clean up resources"""
-        self._set_status("stopping")
-        
-        if self.send_text_task:
-            self.send_text_task.cancel()
+        if self.is_stopping or not self.is_running:
+            return  # Already stopping or not running
             
-        # Wait for tasks to complete
-        await asyncio.sleep(0.5)
+        print("Stopping LiveLoop...")
+        self.is_stopping = True
+        self._set_status("stopping")
+
+        try:
+            # Call the stop callback if defined (for any special handling)
+            if self.on_stop_callback:
+                try:
+                    if asyncio.iscoroutinefunction(self.on_stop_callback):
+                        await self.on_stop_callback()
+                    else:
+                        self.on_stop_callback()
+                except Exception as e:
+                    print(f"Error in stop callback: {e}")
+
+            # Clear audio queues first to prevent any blocking
+            try:
+                await self.empty_audio_in_queue()
+            except Exception as e:
+                print(f"Error clearing audio queue: {e}")
+
+            # Cancel all running tasks with individual error handling
+            cancelled_tasks = []
+            for task in list(self.running_tasks):
+                if not task.done():
+                    try:
+                        print(f"Cancelling task: {task.get_name() if hasattr(task, 'get_name') else 'unnamed'}")
+                        task.cancel()
+                        cancelled_tasks.append(task)
+                    except Exception as e:
+                        print(f"Error cancelling task {task.get_name() if hasattr(task, 'get_name') else 'unnamed'}: {e}")
+
+            # Wait for cancelled tasks to complete with individual timeouts
+            if cancelled_tasks:
+                for task in cancelled_tasks:
+                    try:
+                        await asyncio.wait_for(task, timeout=1.0)
+                    except asyncio.CancelledError:
+                        # This is expected when we cancel a task
+                        pass
+                    except asyncio.TimeoutError:
+                        print(f"Warning: Task {task.get_name() if hasattr(task, 'get_name') else 'unnamed'} did not complete within timeout")
+                    except Exception as e:
+                        print(f"Error waiting for task {task.get_name() if hasattr(task, 'get_name') else 'unnamed'}: {e}")
+            
+        except Exception as e:
+            print(f"Error during stop: {e}")
+            import traceback
+            traceback.print_exc()
+        finally:
+            # Always ensure cleanup happens
+            try:
+                await self._cleanup()
+            except Exception as e:
+                print(f"Error during cleanup: {e}")
+                import traceback
+                traceback.print_exc()
+
+    async def _cleanup(self):
+        """Clean up resources"""
+        print("Cleaning up LiveLoop resources...")
         
-        # Set final status
-        self._set_status("idle")
+        # Clean up audio streams with individual error handling
+        if self.mic_stream:
+            try:
+                self.mic_stream.close()
+                self.mic_stream = None
+                print("Microphone stream closed")
+            except Exception as e:
+                print(f"Error closing mic stream: {e}")
+            
+        if self.system_stream:
+            try:
+                self.system_stream.close()
+                self.system_stream = None
+                print("System audio stream closed")
+            except Exception as e:
+                print(f"Error closing system stream: {e}")
+            
+        # Save recording if enabled
+        if self.record_conversation and self.recording_buffer:
+            try:
+                self._save_recording()
+                print("Recording saved")
+            except Exception as e:
+                print(f"Error saving recording: {e}")
+                
+        # Clear references
+        try:
+            self.session = None
+            self.task_group = None
+            self.running_tasks.clear()
+            self.audio_in_queue = None
+            self.out_queue = None
+            print("References cleared")
+        except Exception as e:
+            print(f"Error clearing references: {e}")
+        
+        # Update final state
+        try:
+            self.is_running = False
+            self.is_stopping = False
+            self._set_status("idle")
+            print("LiveLoop cleanup completed")
+        except Exception as e:
+            print(f"Error updating final state: {e}")
 
     def _set_status(self, status: str, data: Dict[str, Any] = None):
         """Update the current status and call the status change callback if it exists"""
@@ -822,3 +1082,24 @@ class LiveLoop:
         # Call the status change callback if it exists
         if self.on_status_change:
             asyncio.create_task(self.on_status_change(status, data))
+
+    def set_stop_callback(self, callback: Callable):
+        """Set a callback to be called when stop() is initiated"""
+        self.on_stop_callback = callback
+
+    def _create_task(self, coro, name=None):
+        """Create a task and track it for proper cleanup"""
+        if self.task_group is None:
+            raise RuntimeError("Cannot create task without active TaskGroup")
+        
+        task = self.task_group.create_task(coro)
+        if name:
+            task.set_name(name)
+        self.running_tasks.add(task)
+        
+        # Remove from tracking when done
+        def remove_task(fut):
+            self.running_tasks.discard(task)
+        task.add_done_callback(remove_task)
+        
+        return task
