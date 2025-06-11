@@ -3,18 +3,31 @@ import { WebSocketMessage, WebSocketCommand } from '../types';
 
 export const useWebSocket = (url: string) => {
   const [isConnected, setIsConnected] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(true);
   const [messages, setMessages] = useState<WebSocketMessage[]>([]);
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
+  const retryStartTimeRef = useRef<number | null>(null);
+  
+  // Configuration for retry mechanism
+  const RETRY_TIMEOUT = 15000; // 15 seconds total retry time
+  const RETRY_INTERVAL = 500; // 1 second between retries
 
-  // Connect to WebSocket
-  const connect = useCallback(() => {
+  // Connect to WebSocket with retry logic
+  const connect = useCallback((isRetry = false) => {
     try {
       // Check if there's already a connection
       if (socketRef.current && socketRef.current.readyState !== WebSocket.CLOSED) {
         console.log('=== WEBSOCKET ALREADY EXISTS ===', socketRef.current.readyState);
         return;
+      }
+
+      // Initialize retry timer on first attempt
+      if (!isRetry) {
+        retryStartTimeRef.current = Date.now();
+        setError(null); // Clear any previous errors at start
+        setIsConnecting(true);
       }
       
       console.log(`=== ATTEMPTING WEBSOCKET CONNECTION TO: ${url} ===`);
@@ -24,7 +37,9 @@ export const useWebSocket = (url: string) => {
         console.log('=== WEBSOCKET CONNECTED SUCCESSFULLY ===');
         console.log('=== WEBSOCKET READY STATE ===', socket.readyState);
         setIsConnected(true);
+        setIsConnecting(false);
         setError(null);  // Clear any previous errors
+        retryStartTimeRef.current = null; // Reset retry timer
         
         // Clear any reconnect timeout
         if (reconnectTimeoutRef.current !== null) {
@@ -84,18 +99,26 @@ export const useWebSocket = (url: string) => {
         console.log(`=== CLOSE CODE MEANING: ${closeMessage} ===`);
         
         setIsConnected(false);
-        setError(`WebSocket closed: ${closeMessage} (Code: ${event.code}${event.reason ? `, Reason: ${event.reason}` : ''})`);
         
-        // Only attempt to reconnect if it wasn't a clean close
-        if (event.code !== 1000) {
-          // Attempt to reconnect after 5 seconds (longer delay to avoid conflicts)
+        // Check if we should retry or show error
+        if (retryStartTimeRef.current && Date.now() - retryStartTimeRef.current < RETRY_TIMEOUT) {
+          // Still within retry period, don't show error, just retry
+          console.log('=== RETRYING CONNECTION (WITHIN RETRY PERIOD) ===');
           reconnectTimeoutRef.current = window.setTimeout(() => {
-            console.log('=== ATTEMPTING TO RECONNECT WEBSOCKET ===');
-            connect();
-          }, 5000);
-        } else {
-          console.log('=== CLEAN CLOSE - NOT RECONNECTING ===');
-        }
+            connect(true);
+          }, RETRY_INTERVAL);
+                 } else if (event.code !== 1000) {
+           // Outside retry period or no retry started, show error and attempt single reconnect
+           setIsConnecting(false);
+           setError(`WebSocket closed: ${closeMessage} (Code: ${event.code}${event.reason ? `, Reason: ${event.reason}` : ''})`);
+           reconnectTimeoutRef.current = window.setTimeout(() => {
+             console.log('=== ATTEMPTING TO RECONNECT WEBSOCKET ===');
+             connect();
+           }, 5000);
+         } else {
+           console.log('=== CLEAN CLOSE - NOT RECONNECTING ===');
+           setIsConnecting(false);
+         }
       };
       
       socket.onerror = (err) => {
@@ -106,7 +129,16 @@ export const useWebSocket = (url: string) => {
           currentTarget: err.currentTarget,
           readyState: err.target ? (err.target as WebSocket).readyState : 'unknown'
         });
-        setError(`WebSocket connection error: ${err.type} (ReadyState: ${err.target ? (err.target as WebSocket).readyState : 'unknown'})`);
+        
+        // Check if we should retry or show error
+        if (retryStartTimeRef.current && Date.now() - retryStartTimeRef.current < RETRY_TIMEOUT) {
+          // Still within retry period, don't show error, just log and let onclose handle retry
+          console.log('=== CONNECTION ERROR DURING RETRY PERIOD - WILL RETRY ===');
+                 } else {
+           // Outside retry period, show error
+           setIsConnecting(false);
+           setError(`WebSocket connection error: ${err.type} (ReadyState: ${err.target ? (err.target as WebSocket).readyState : 'unknown'})`);
+         }
       };
       
       // Close any existing connection
@@ -119,13 +151,23 @@ export const useWebSocket = (url: string) => {
       console.log('=== WEBSOCKET REFERENCE SET ===', socket.readyState);
     } catch (err) {
       console.error('=== ERROR CREATING WEBSOCKET ===', err);
-      setError(`Failed to connect to WebSocket: ${err}`);
       
-      // Attempt to reconnect after 2 seconds
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        console.log('=== ATTEMPTING TO RECONNECT AFTER ERROR ===');
-        connect();
-      }, 2000);
+      // Check if we should retry or show error
+      if (retryStartTimeRef.current && Date.now() - retryStartTimeRef.current < RETRY_TIMEOUT) {
+        // Still within retry period, don't show error, just retry
+        console.log('=== RETRYING CONNECTION AFTER ERROR (WITHIN RETRY PERIOD) ===');
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          connect(true);
+        }, RETRY_INTERVAL);
+             } else {
+         // Outside retry period, show error and attempt single reconnect
+         setIsConnecting(false);
+         setError(`Failed to connect to WebSocket: ${err}`);
+         reconnectTimeoutRef.current = window.setTimeout(() => {
+           console.log('=== ATTEMPTING TO RECONNECT AFTER ERROR ===');
+           connect();
+         }, 2000);
+       }
     }
   }, [url]);
 
@@ -140,6 +182,10 @@ export const useWebSocket = (url: string) => {
       window.clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;
     }
+    
+    // Reset retry timer
+    retryStartTimeRef.current = null;
+    setIsConnecting(false);
   }, []);
 
   // Send message to WebSocket
@@ -151,22 +197,19 @@ export const useWebSocket = (url: string) => {
     return false;
   }, []);
 
-  // Connect on mount with delay, disconnect on unmount
+  // Connect immediately on mount, disconnect on unmount
   useEffect(() => {
-    // Add a delay to let the Python bridge start first
-    const initialConnectionTimer = setTimeout(() => {
-      console.log('=== INITIAL WEBSOCKET CONNECTION AFTER DELAY ===');
-      connect();
-    }, 1000); // 1 second delay
+    console.log('=== STARTING INITIAL WEBSOCKET CONNECTION ===');
+    connect();
     
     return () => {
-      clearTimeout(initialConnectionTimer);
       disconnect();
     };
   }, [connect, disconnect]);
 
   return {
     isConnected,
+    isConnecting,
     messages,
     error,
     sendMessage,

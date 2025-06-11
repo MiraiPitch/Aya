@@ -13,7 +13,7 @@ A cross-platform desktop application for the Aya Voice Assistant, built with Tau
 ## Input/Output Capabilities
 
 - **Input:** Live webcam video, screen capture, microphone input, computer audio
-- **Output:** Voice responses, text responses
+- **Output:** Voice responses, text responses, tool calls
 
 ## Development
 
@@ -128,7 +128,3 @@ Python bridge code is in the `../python/src/aya/` directory.
 ├── websocket_server.py  # WebSocket server implementation
 └── tauri_bridge.py      # Bridge between Tauri and Python
 ```
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details. 

@@ -6,13 +6,17 @@ interface VoiceControlsProps {
   onStart: () => void;
   onStop: () => void;
   disabled?: boolean;
+  isConnecting?: boolean;
+  isConnected?: boolean;
 }
 
 const VoiceControls: React.FC<VoiceControlsProps> = ({ 
   isRunning, 
   onStart, 
   onStop, 
-  disabled = false 
+  disabled = false,
+  isConnecting = false,
+  isConnected = false
 }) => {
   return (
     <div className="voice-controls">
@@ -24,9 +28,15 @@ const VoiceControls: React.FC<VoiceControlsProps> = ({
         {isRunning ? 'Stop Assistant' : 'Start Assistant'}
       </button>
       
-      {disabled && (
+      {isConnecting && (
+        <p className="controls-connecting-message">
+          Connecting to backend...
+        </p>
+      )}
+      
+      {disabled && !isConnecting && (
         <p className="controls-disabled-message">
-          Fix errors before starting the assistant
+          {!isConnected ? "Backend not connected" : "Fix errors before starting the assistant"}
         </p>
       )}
     </div>

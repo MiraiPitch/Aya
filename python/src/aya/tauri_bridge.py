@@ -10,6 +10,7 @@ import logging
 import signal
 import sys
 from aya.websocket_server import AyaWebSocketServer
+import traceback
 
 # Configure logging
 logging.basicConfig(
@@ -100,21 +101,34 @@ async def main():
         # Keep the server running with periodic status checks
         loop_count = 0
         while True:
-            await asyncio.sleep(5)  # Check every 5 seconds
-            loop_count += 1
-            if loop_count % 12 == 0:  # Log every minute
-                print(f"=== BRIDGE ALIVE - Loop #{loop_count}, Clients: {len(server.clients) if server else 0} ===")
-                logger.info(f"Bridge status check - Loop #{loop_count}, Clients: {len(server.clients)}")
+            try:
+                await asyncio.sleep(5)  # Check every 5 seconds
+                loop_count += 1
+                if loop_count % 12 == 0:  # Log every minute
+                    print(f"=== BRIDGE ALIVE - Loop #{loop_count}, Clients: {len(server.clients) if server else 0} ===")
+                    logger.info(f"Bridge status check - Loop #{loop_count}, Clients: {len(server.clients)}")
+            except Exception as loop_error:
+                logger.error(f"Error in bridge main loop: {loop_error}")
+                logger.error(traceback.format_exc())
+                # Don't exit on loop errors, just continue
+                continue
             
     except asyncio.CancelledError:
         logger.info("Bridge cancelled")
     except Exception as e:
         logger.error(f"Error in Tauri Bridge: {e}")
-        raise
+        logger.error(traceback.format_exc())
+        # Don't raise the exception - just log it and try to continue gracefully
+        logger.info("Bridge encountered an error but will attempt graceful shutdown")
     finally:
         logger.info("Stopping Tauri Bridge...")
         if server:
-            await server.stop_server()
+            try:
+                await server.stop_server()
+                logger.info("WebSocket server stopped successfully")
+            except Exception as stop_error:
+                logger.error(f"Error stopping WebSocket server: {stop_error}")
+                logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     print("=== TAURI BRIDGE ENTRY POINT ===")
@@ -135,4 +149,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"=== UNHANDLED ERROR: {e} ===")
         logger.error(f"Unhandled error in Tauri Bridge: {e}")
+        logger.error(traceback.format_exc())
+        print("=== BRIDGE WILL EXIT DUE TO UNHANDLED ERROR ===")
         sys.exit(1) 

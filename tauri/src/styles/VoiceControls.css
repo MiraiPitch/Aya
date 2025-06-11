@@ -53,4 +53,24 @@
   font-size: 0.9rem;
   margin-top: 8px;
   text-align: center;
+}
+
+.controls-connecting-message {
+  color: #2196F3;
+  font-size: 0.9rem;
+  margin-top: 8px;
+  text-align: center;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 1;
+  }
 } 

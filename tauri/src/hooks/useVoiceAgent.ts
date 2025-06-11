@@ -23,6 +23,7 @@ export const useVoiceAgent = () => {
   // Connect to WebSocket server
   const { 
     isConnected, 
+    isConnecting,
     messages, 
     error: wsError, 
     sendMessage 
@@ -233,6 +234,9 @@ export const useVoiceAgent = () => {
     stopAgent,
     updateSettings,
     clearError,
-    isLoaded: loaded
+    isLoaded: loaded,
+    isConnected,
+    isConnecting,
+    wsError
   };
 }; 

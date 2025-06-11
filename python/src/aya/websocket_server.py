@@ -304,38 +304,65 @@ class AyaWebSocketServer:
 
     def _live_loop_done_callback(self, future):
         """Callback when LiveLoop task completes"""
+        logger.info("=== LIVE_LOOP_DONE_CALLBACK STARTED ===")
         try:
             # Check for exceptions
-            future.result()
-            logger.info("LiveLoop task completed successfully")
-        except asyncio.CancelledError:
-            logger.info("LiveLoop task was cancelled")
-        except Exception as e:
-            logger.error(f"LiveLoop task failed with error: {e}")
-            logger.error(traceback.format_exc())
-            # Send error to clients but don't crash the server
             try:
-                asyncio.create_task(self.send_error(f"LiveLoop error: {str(e)}", traceback.format_exc()))
-            except Exception as send_error:
-                logger.error(f"Failed to send LiveLoop error to clients: {send_error}")
-        finally:
+                result = future.result()
+                logger.info("LiveLoop task completed successfully")
+                logger.info(f"LiveLoop result: {result}")
+            except asyncio.CancelledError:
+                logger.info("LiveLoop task was cancelled")
+            except Exception as e:
+                logger.error(f"LiveLoop task failed with error: {e}")
+                logger.error(traceback.format_exc())
+                # Send error to clients but don't crash the server
+                try:
+                    logger.info("Attempting to send error to clients...")
+                    asyncio.create_task(self.send_error(f"LiveLoop error: {str(e)}", traceback.format_exc()))
+                    logger.info("Error sent to clients successfully")
+                except Exception as send_error:
+                    logger.error(f"Failed to send LiveLoop error to clients: {send_error}")
+                    logger.error(traceback.format_exc())
+        except Exception as callback_error:
+            logger.error(f"Error in _live_loop_done_callback exception handling: {callback_error}")
+            logger.error(traceback.format_exc())
+        
+        try:
+            logger.info("=== RESETTING WEBSOCKET SERVER STATE ===")
             # Reset state if not already done
             if self.is_running:
+                logger.info("Setting is_running to False")
                 self.is_running = False
                 # Use create_task to run the coroutine
                 try:
+                    logger.info("Creating task to update status to idle")
                     asyncio.create_task(self.update_status("idle"))
+                    logger.info("Status update task created")
                 except Exception as status_error:
-                    logger.error(f"Failed to update status after LiveLoop completion: {status_error}")
+                    logger.error(f"Failed to create status update task: {status_error}")
+                    logger.error(traceback.format_exc())
+            else:
+                logger.info("is_running was already False")
             
             # Clear references
+            logger.info("Clearing LiveLoop references")
             self.live_loop = None
             self.live_loop_task = None
+            logger.info("LiveLoop references cleared")
+            
+        except Exception as cleanup_error:
+            logger.error(f"Error in _live_loop_done_callback cleanup: {cleanup_error}")
+            logger.error(traceback.format_exc())
+        
+        logger.info("=== LIVE_LOOP_DONE_CALLBACK COMPLETED ===")
 
     async def handle_stop_command(self):
         """Handle stop command from client"""
+        logger.info("=== HANDLE_STOP_COMMAND STARTED ===")
         try:
             if not self.is_running:
+                logger.info("Voice agent is not running - sending error response")
                 await self.send_to_all({
                     "type": "error",
                     "error": "Voice agent is not running",
@@ -347,55 +374,97 @@ class AyaWebSocketServer:
             await self.update_status("stopping")
             
             # Set running to false first to prevent other operations
+            logger.info("Setting is_running to False")
             self.is_running = False
             
             # Use the callback if available for any special handling
             try:
                 if self.on_stop_callback:
-                    logger.info("Using stop callback")
+                    logger.info("Calling stop callback")
                     await self.on_stop_callback()
+                    logger.info("Stop callback completed")
+                else:
+                    logger.info("No stop callback defined")
             except Exception as e:
                 logger.error(f"Error in stop callback: {e}")
                 logger.error(traceback.format_exc())
+                # Don't let callback errors stop the stop process
             
             # Let the LiveLoop handle its own cleanup
-            if self.live_loop:
-                logger.info("Stopping LiveLoop...")
-                await self.live_loop.stop()
+            try:
+                if self.live_loop:
+                    logger.info("Stopping LiveLoop...")
+                    await self.live_loop.stop()
+                    logger.info("LiveLoop stop() completed")
+                else:
+                    logger.info("No LiveLoop to stop")
+            except Exception as e:
+                logger.error(f"Error stopping LiveLoop: {e}")
+                logger.error(traceback.format_exc())
+                # Continue with cleanup even if LiveLoop stop fails
             
             # Clear references
-            self.live_loop = None
-            if self.live_loop_task and not self.live_loop_task.done():
-                self.live_loop_task.cancel()
-                try:
-                    await asyncio.wait_for(self.live_loop_task, timeout=2.0)
-                except (asyncio.CancelledError, asyncio.TimeoutError):
-                    logger.warning("LiveLoop task cancellation timed out")
-            self.live_loop_task = None
+            try:
+                logger.info("Clearing LiveLoop references")
+                self.live_loop = None
+                if self.live_loop_task and not self.live_loop_task.done():
+                    logger.info("Cancelling LiveLoop task")
+                    self.live_loop_task.cancel()
+                    try:
+                        await asyncio.wait_for(self.live_loop_task, timeout=2.0)
+                        logger.info("LiveLoop task cancelled successfully")
+                    except (asyncio.CancelledError, asyncio.TimeoutError):
+                        logger.warning("LiveLoop task cancellation timed out")
+                    except Exception as cancel_error:
+                        logger.error(f"Error cancelling LiveLoop task: {cancel_error}")
+                        logger.error(traceback.format_exc())
+                self.live_loop_task = None
+                logger.info("LiveLoop references cleared")
+            except Exception as cleanup_error:
+                logger.error(f"Error clearing LiveLoop references: {cleanup_error}")
+                logger.error(traceback.format_exc())
             
             logger.info("Voice agent stopped successfully")
-            await self.update_status("idle")
+            try:
+                await self.update_status("idle")
+                logger.info("Status updated to idle")
+            except Exception as status_error:
+                logger.error(f"Error updating status to idle: {status_error}")
+                logger.error(traceback.format_exc())
         
         except Exception as e:
             logger.error(f"Error in handle_stop_command: {e}")
             logger.error(traceback.format_exc())
             
             # Always reset state even if there was an error
-            self.is_running = False
-            self.live_loop = None
-            self.live_loop_task = None
+            try:
+                logger.info("Resetting state due to error in stop command")
+                self.is_running = False
+                self.live_loop = None
+                self.live_loop_task = None
+                logger.info("State reset completed")
+            except Exception as reset_error:
+                logger.error(f"Error resetting state: {reset_error}")
+                logger.error(traceback.format_exc())
             
             # Send error to clients but don't let it crash the connection
             try:
                 await self.send_error(f"Error stopping voice agent: {str(e)}", traceback.format_exc())
+                logger.info("Error message sent to clients")
             except Exception as send_error:
                 logger.error(f"Failed to send error message: {send_error}")
+                logger.error(traceback.format_exc())
             
             # Still try to update status
             try:
                 await self.update_status("idle")
+                logger.info("Status updated to idle after error")
             except Exception as status_error:
-                logger.error(f"Failed to update status: {status_error}")
+                logger.error(f"Failed to update status after error: {status_error}")
+                logger.error(traceback.format_exc())
+        
+        logger.info("=== HANDLE_STOP_COMMAND COMPLETED ===")
+        logger.info("WebSocket server should remain running and ready for new connections")
 
     async def handle_get_resources(self, websocket: websockets.WebSocketServerProtocol):
         """Handle request for available resources"""

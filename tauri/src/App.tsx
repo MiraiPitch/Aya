@@ -15,7 +15,9 @@ function App() {
     startAgent,
     stopAgent,
     updateSettings,
-    clearError
+    clearError,
+    isConnected,
+    isConnecting
   } = useVoiceAgent();
 
   return (
@@ -38,7 +40,9 @@ function App() {
           isRunning={isRunning} 
           onStart={startAgent} 
           onStop={stopAgent} 
-          disabled={!!error} 
+          disabled={!!error || !isConnected} 
+          isConnecting={isConnecting}
+          isConnected={isConnected}
         />
         
         <SettingsPanel 
