@@ -31,9 +31,25 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   width: 100%;
+}
+
+.main-content {
+  display: flex;
+  gap: 24px;
+  flex: 1;
+}
+
+.left-panel {
+  flex: 1;
+  min-width: 400px;
+}
+
+.right-panel {
+  flex: 1;
+  min-width: 500px;
 }
 
 .app-footer {
@@ -73,6 +89,17 @@
 }
 
 /* Responsive adjustments */
+@media (max-width: 1024px) {
+  .main-content {
+    flex-direction: column;
+  }
+  
+  .left-panel,
+  .right-panel {
+    min-width: unset;
+  }
+}
+
 @media (max-width: 768px) {
   .app-header {
     flex-direction: column;
@@ -83,5 +110,9 @@
   
   .app-main {
     padding: 16px;
+  }
+  
+  .main-content {
+    gap: 16px;
   }
 } 

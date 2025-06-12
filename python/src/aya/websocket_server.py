@@ -120,6 +120,27 @@ class AyaWebSocketServer:
         }
         await self.send_to_all(error_message)
 
+    async def send_chat_message(self, sender: str, message: str, channel: str = "conversation"):
+        """Send a chat message to all clients"""
+        chat_message = {
+            "type": "chat_message",
+            "sender": sender,
+            "message": message,
+            "channel": channel,
+            "timestamp": asyncio.get_event_loop().time()
+        }
+        await self.send_to_all(chat_message)
+
+    async def send_log_message(self, level: str, message: str):
+        """Send a log message to all clients"""
+        log_message = {
+            "type": "log_message",
+            "level": level,
+            "message": message,
+            "timestamp": asyncio.get_event_loop().time()
+        }
+        await self.send_to_all(log_message)
+
     async def update_status(self, status: str, data: Dict[str, Any] = None):
         """Update and broadcast status to all clients"""
         self.status = status
@@ -165,6 +186,16 @@ class AyaWebSocketServer:
                     elif command == "get_resources":
                         # Ensure this command is handled immediately
                         await self.handle_get_resources(websocket)
+                        continue  # Skip sending status update
+                    
+                    elif command == "send_message":
+                        message_text = message.get("message", "")
+                        await self.handle_send_message(message_text)
+                        continue  # Skip sending status update
+                    
+                    elif command == "clear_channel":
+                        channel = message.get("channel", "conversation")
+                        await self.handle_clear_channel(channel)
                         continue  # Skip sending status update
                     
                     else:
@@ -235,6 +266,33 @@ class AyaWebSocketServer:
         finally:
             await self.unregister(websocket)
 
+    async def handle_send_message(self, message: str):
+        """Handle send_message command from client"""
+        try:
+            if not self.is_running or not self.live_loop:
+                await self.send_log_message("warning", "Cannot send message: voice agent is not running")
+                return
+            
+            # Send message to the LiveLoop
+            if hasattr(self.live_loop, 'session') and self.live_loop.session:
+                await self.live_loop.session.send(input=message, end_of_turn=True)
+                await self.send_log_message("info", f"Message sent to voice agent: {message}")
+            else:
+                await self.send_log_message("error", "Voice agent session not available")
+                
+        except Exception as e:
+            logger.error(f"Error sending message to voice agent: {e}")
+            await self.send_log_message("error", f"Failed to send message: {str(e)}")
+
+    async def handle_clear_channel(self, channel: str):
+        """Handle clear_channel command from client"""
+        try:
+            # Log the channel clear action
+            await self.send_log_message("info", f"Cleared {channel} channel")
+        except Exception as e:
+            logger.error(f"Error handling clear channel: {e}")
+            await self.send_log_message("error", f"Failed to clear channel: {str(e)}")
+
     async def handle_start_command(self, config: Dict[str, Any]):
         """Handle start command from client"""
         try:
@@ -287,6 +345,26 @@ class AyaWebSocketServer:
             
             # Set status change callback
             self.live_loop.on_status_change = self.update_status
+            
+            # Override the output_text method to send messages to frontend
+            original_output_text = self.live_loop.output_text
+            accumulated_text = [""]  # Using a list for mutable state in the closure
+            
+            def custom_output_text(text):
+                accumulated_text[0] += text
+                
+                # Check if we have a natural break or enough accumulated text
+                if text.endswith(("\n", ".", "!", "?")) or len(accumulated_text[0]) > 200:
+                    # Send to frontend
+                    display_text = accumulated_text[0].strip()
+                    if display_text:
+                        asyncio.create_task(self.send_chat_message("assistant", display_text, "conversation"))
+                    
+                    # Reset accumulated text
+                    accumulated_text[0] = ""
+            
+            # Replace the original output_text method
+            self.live_loop.output_text = custom_output_text
             
             # Run the LiveLoop
             if self.on_start_callback:

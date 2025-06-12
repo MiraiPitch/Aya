@@ -5,7 +5,11 @@ import {
   AyaResources,
   StartCommand,
   StopCommand,
-  GetResourcesCommand
+  GetResourcesCommand,
+  SendMessageCommand,
+  ClearChannelCommand,
+  ChatMessage,
+  TextChannel
 } from '../types';
 import { useWebSocket } from './useWebSocket';
 import { useSettingsStore } from '../store/settingsStore';
@@ -19,15 +23,87 @@ export const useVoiceAgent = () => {
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState<string | null>(null);
   const [resources, setResources] = useState<AyaResources | null>(null);
+  
+  // Chat state management
+  const [messages, setMessages] = useState<Record<TextChannel, ChatMessage[]>>({
+    conversation: [],
+    logs: [],
+    hints: [],
+    status: []
+  });
 
   // Connect to WebSocket server
   const { 
     isConnected, 
     isConnecting,
-    messages, 
+    messages: wsMessages, 
     error: wsError, 
     sendMessage 
   } = useWebSocket('ws://localhost:8765');
+
+  // Helper function to generate message ID
+  const generateMessageId = () => {
+    return `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  };
+
+  // Helper function to add message to a channel
+  const addMessageToChannel = useCallback((channel: TextChannel, message: ChatMessage) => {
+    setMessages(prev => ({
+      ...prev,
+      [channel]: [...prev[channel], message]
+    }));
+  }, []);
+
+  // Send a chat message
+  const sendChatMessage = useCallback((message: string) => {
+    if (!isConnected) {
+      console.error('Cannot send message: not connected to WebSocket');
+      return;
+    }
+
+    // Add user message to conversation channel immediately
+    const userMessage: ChatMessage = {
+      id: generateMessageId(),
+      sender: 'user',
+      message,
+      timestamp: Date.now()
+    };
+    addMessageToChannel('conversation', userMessage);
+
+    // Send message to backend
+    const sendCommand: SendMessageCommand = {
+      command: 'send_message',
+      message
+    };
+    
+    const success = sendMessage(sendCommand);
+    if (!success) {
+      console.error('Failed to send message to backend');
+      // Add error message to conversation
+      const errorMessage: ChatMessage = {
+        id: generateMessageId(),
+        sender: 'system',
+        message: 'Failed to send message to backend',
+        timestamp: Date.now()
+      };
+      addMessageToChannel('conversation', errorMessage);
+    }
+  }, [isConnected, sendMessage, addMessageToChannel]);
+
+  // Clear a text channel
+  const clearChannel = useCallback((channel: TextChannel) => {
+    setMessages(prev => ({
+      ...prev,
+      [channel]: []
+    }));
+
+    // Optionally, send clear command to backend
+    const clearCommand: ClearChannelCommand = {
+      command: 'clear_channel',
+      channel
+    };
+    sendMessage(clearCommand);
+  }, [sendMessage]);
 
   // Start the voice agent
   const startAgent = useCallback(async () => {
@@ -40,6 +116,15 @@ export const useVoiceAgent = () => {
       }
       
       setStatus('starting');
+      
+      // Add status message
+      const statusMessage: ChatMessage = {
+        id: generateMessageId(),
+        sender: 'system',
+        message: 'Starting voice agent...',
+        timestamp: Date.now()
+      };
+      addMessageToChannel('status', statusMessage);
       
       // Check if WebSocket is connected
       if (!isConnected) {
@@ -63,8 +148,17 @@ export const useVoiceAgent = () => {
       console.error('Error starting voice agent:', err);
       setError(`Failed to start voice agent: ${err}`);
       setStatus('error');
+      
+      // Add error message to logs
+      const errorMessage: ChatMessage = {
+        id: generateMessageId(),
+        sender: 'system',
+        message: `Error starting voice agent: ${err}`,
+        timestamp: Date.now()
+      };
+      addMessageToChannel('logs', errorMessage);
     }
-  }, [isConnected, isRunning, sendMessage, settings]);
+  }, [isConnected, isRunning, sendMessage, settings, addMessageToChannel]);
 
   // Stop the voice agent
   const stopAgent = useCallback(async () => {
@@ -75,6 +169,15 @@ export const useVoiceAgent = () => {
       }
       
       setStatus('stopping');
+      
+      // Add status message
+      const statusMessage: ChatMessage = {
+        id: generateMessageId(),
+        sender: 'system',
+        message: 'Stopping voice agent...',
+        timestamp: Date.now()
+      };
+      addMessageToChannel('status', statusMessage);
       
       // Check if WebSocket is connected
       if (!isConnected) {
@@ -96,8 +199,17 @@ export const useVoiceAgent = () => {
     } catch (err) {
       console.error('Error stopping voice agent:', err);
       setError(`Failed to stop voice agent: ${err}`);
+      
+      // Add error message to logs
+      const errorMessage: ChatMessage = {
+        id: generateMessageId(),
+        sender: 'system',
+        message: `Error stopping voice agent: ${err}`,
+        timestamp: Date.now()
+      };
+      addMessageToChannel('logs', errorMessage);
     }
-  }, [isConnected, isRunning, sendMessage]);
+  }, [isConnected, isRunning, sendMessage, addMessageToChannel]);
 
   // Request resources from the Python bridge
   const fetchResources = useCallback(() => {
@@ -138,9 +250,9 @@ export const useVoiceAgent = () => {
   // Handle WebSocket messages
   useEffect(() => {
     const handleMessages = () => {
-      if (messages.length === 0) return;
+      if (wsMessages.length === 0) return;
       
-      const latestMessage = messages[messages.length - 1];
+      const latestMessage = wsMessages[wsMessages.length - 1];
       console.log('=== HANDLING MESSAGE ===', latestMessage);
       
       switch (latestMessage.type) {
@@ -150,12 +262,30 @@ export const useVoiceAgent = () => {
           if (latestMessage.isRunning !== undefined) {
             setIsRunning(latestMessage.isRunning);
           }
+          
+          // Add status to status channel
+          const statusMessage: ChatMessage = {
+            id: generateMessageId(),
+            sender: 'system',
+            message: `Status: ${latestMessage.status}`,
+            timestamp: latestMessage.timestamp
+          };
+          addMessageToChannel('status', statusMessage);
           break;
           
         case 'error':
           console.log('=== PROCESSING ERROR MESSAGE ===', latestMessage.error);
           setError(latestMessage.error);
           setStatus('error');
+          
+          // Add error to logs channel
+          const errorMessage: ChatMessage = {
+            id: generateMessageId(),
+            sender: 'system',
+            message: `Error: ${latestMessage.error}`,
+            timestamp: latestMessage.timestamp
+          };
+          addMessageToChannel('logs', errorMessage);
           break;
           
         case 'resources':
@@ -165,6 +295,28 @@ export const useVoiceAgent = () => {
           console.log('=== RESOURCES SET, CHECKING CONNECTION STATE ===', isConnected);
           break;
           
+        case 'chat_message':
+          console.log('=== PROCESSING CHAT MESSAGE ===', latestMessage);
+          const chatMessage: ChatMessage = {
+            id: generateMessageId(),
+            sender: latestMessage.sender,
+            message: latestMessage.message,
+            timestamp: latestMessage.timestamp
+          };
+          addMessageToChannel(latestMessage.channel, chatMessage);
+          break;
+          
+        case 'log_message':
+          console.log('=== PROCESSING LOG MESSAGE ===', latestMessage);
+          const logMessage: ChatMessage = {
+            id: generateMessageId(),
+            sender: 'system',
+            message: `[${latestMessage.level.toUpperCase()}] ${latestMessage.message}`,
+            timestamp: latestMessage.timestamp
+          };
+          addMessageToChannel('logs', logMessage);
+          break;
+          
         default:
           console.log('=== UNKNOWN MESSAGE TYPE ===', (latestMessage as any).type);
           break;
@@ -172,15 +324,24 @@ export const useVoiceAgent = () => {
     };
     
     handleMessages();
-  }, [messages]);
+  }, [wsMessages, addMessageToChannel, isConnected]);
 
   // Set WebSocket error
   useEffect(() => {
     if (wsError) {
       console.log('=== SETTING WEBSOCKET ERROR ===', wsError);
       setError(wsError);
+      
+      // Add WebSocket error to logs
+      const errorMessage: ChatMessage = {
+        id: generateMessageId(),
+        sender: 'system',
+        message: `WebSocket error: ${wsError}`,
+        timestamp: Date.now()
+      };
+      addMessageToChannel('logs', errorMessage);
     }
-  }, [wsError]);
+  }, [wsError, addMessageToChannel]);
 
   // Fetch resources when connected
   useEffect(() => {
@@ -222,7 +383,8 @@ export const useVoiceAgent = () => {
     };
     
     checkBridgeStatus();
-  }, [isConnected, fetchResources, isTauri]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, fetchResources]);
 
   return {
     isRunning,
@@ -230,10 +392,13 @@ export const useVoiceAgent = () => {
     error,
     settings,
     resources,
+    messages,
     startAgent,
     stopAgent,
     updateSettings,
     clearError,
+    sendChatMessage,
+    clearChannel,
     isLoaded: loaded,
     isConnected,
     isConnecting,

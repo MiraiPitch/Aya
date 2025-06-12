@@ -32,6 +32,16 @@ export interface AyaResources {
   responseModalities: string[];
 }
 
+// Chat message types
+export interface ChatMessage {
+  id: string;
+  sender: 'user' | 'assistant' | 'system';
+  message: string;
+  timestamp: number;
+}
+
+export type TextChannel = 'conversation' | 'logs' | 'hints' | 'status';
+
 // WebSocket message types
 export interface BaseWebSocketMessage {
   type: string;
@@ -64,7 +74,20 @@ export interface ResourcesMessage extends BaseWebSocketMessage {
   resources: AyaResources;
 }
 
-export type WebSocketMessage = StatusMessage | ErrorMessage | ResourcesMessage;
+export interface ChatMessageReceived extends BaseWebSocketMessage {
+  type: 'chat_message';
+  sender: 'assistant' | 'system';
+  message: string;
+  channel: TextChannel;
+}
+
+export interface LogMessage extends BaseWebSocketMessage {
+  type: 'log_message';
+  level: 'info' | 'warning' | 'error' | 'debug';
+  message: string;
+}
+
+export type WebSocketMessage = StatusMessage | ErrorMessage | ResourcesMessage | ChatMessageReceived | LogMessage;
 
 // WebSocket command types
 export interface BaseWebSocketCommand {
@@ -84,4 +107,14 @@ export interface GetResourcesCommand extends BaseWebSocketCommand {
   command: 'get_resources';
 }
 
-export type WebSocketCommand = StartCommand | StopCommand | GetResourcesCommand; 
+export interface SendMessageCommand extends BaseWebSocketCommand {
+  command: 'send_message';
+  message: string;
+}
+
+export interface ClearChannelCommand extends BaseWebSocketCommand {
+  command: 'clear_channel';
+  channel: TextChannel;
+}
+
+export type WebSocketCommand = StartCommand | StopCommand | GetResourcesCommand | SendMessageCommand | ClearChannelCommand; 

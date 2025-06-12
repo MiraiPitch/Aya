@@ -3,6 +3,7 @@ import './styles/App.css';
 import StatusDisplay from './components/StatusDisplay';
 import VoiceControls from './components/VoiceControls';
 import SettingsPanel from './components/SettingsPanel';
+import ChatBox from './components/ChatBox';
 import { useVoiceAgent } from './hooks/useVoiceAgent';
 
 function App() {
@@ -12,10 +13,13 @@ function App() {
     error,
     settings,
     resources,
+    messages,
     startAgent,
     stopAgent,
     updateSettings,
     clearError,
+    sendChatMessage,
+    clearChannel,
     isConnected,
     isConnecting
   } = useVoiceAgent();
@@ -45,12 +49,26 @@ function App() {
           isConnected={isConnected}
         />
         
-        <SettingsPanel 
-          settings={settings} 
-          resources={resources} 
-          onUpdateSettings={updateSettings} 
-          disabled={isRunning} 
-        />
+        <div className="main-content">
+          <div className="left-panel">
+            <SettingsPanel 
+              settings={settings} 
+              resources={resources} 
+              onUpdateSettings={updateSettings} 
+              disabled={isRunning} 
+            />
+          </div>
+          
+          <div className="right-panel">
+            <ChatBox 
+              messages={messages}
+              onSendMessage={sendChatMessage}
+              onClearChannel={clearChannel}
+              disabled={!isRunning}
+              isConnected={isConnected}
+            />
+          </div>
+        </div>
       </main>
       
       <footer className="app-footer">

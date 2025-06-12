@@ -12,7 +12,7 @@ export const useWebSocket = (url: string) => {
   
   // Configuration for retry mechanism
   const RETRY_TIMEOUT = 15000; // 15 seconds total retry time
-  const RETRY_INTERVAL = 500; // 1 second between retries
+  const RETRY_INTERVAL = 500; // 500ms between retries
 
   // Connect to WebSocket with retry logic
   const connect = useCallback((isRetry = false) => {
