@@ -35,6 +35,12 @@ VOICES = {
     "Orus (Male)": "Orus"
 }
 
+GEMINI_LIVE_MODELS = {
+     "Gemini 2.0 Flash Live": "models/gemini-2.0-flash-live-001", 
+     "Gemini 2.5 Flash Native Audio (Preview)": "models/gemini-2.5-flash-preview-native-audio-dialog", 
+     "Gemini 2.5 Flash Native Audio Thinking (Exp)": "models/gemini-2.5-flash-exp-native-audio-thinking-dialog"
+}
+
 AUDIO_SOURCES = ["none", "microphone", "computer", "both"]
 VIDEO_MODES = ["none", "camera", "screen"]
 MODALITIES = ["TEXT", "AUDIO"]
@@ -56,9 +62,7 @@ def get_package_resource_path(relative_path: str) -> str:
         str: Absolute path to the resource
     """
     try:
-        # First try to get the resource from the installed package
         try:
-            # For Python 3.9+
             pkg_dir = importlib.resources.files('aya')
             resource_path = pkg_dir / 'resources' / relative_path
             return str(resource_path)

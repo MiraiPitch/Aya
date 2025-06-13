@@ -8,6 +8,7 @@ export interface AyaSettings {
   voice: string;
   responseModality: string;
   systemPrompt: string;
+  model: string;
   initialMessage?: string;
 }
 
@@ -15,10 +16,11 @@ export interface AyaSettings {
 export const DEFAULT_SETTINGS: AyaSettings = {
   videoMode: 'none',
   audioSource: 'microphone',
-  language: 'en-US',
-  voice: 'Leda',
+  language: 'English (US)',
+  voice: 'Leda (Female)',
   responseModality: 'AUDIO',
   systemPrompt: 'system_prompts/default/aya_default_tools.txt',
+  model: 'Gemini 2.0 Flash Live',
   initialMessage: '[CALL_START]'
 };
 
@@ -30,6 +32,7 @@ export interface AyaResources {
   audioSources: string[];
   videoModes: string[];
   responseModalities: string[];
+  models: string[];
   availableChannels: string[];  // Re-enabled dynamic channels
 }
 

@@ -118,6 +118,23 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
         </div>
         
         <div className="setting-group">
+          <label htmlFor="model">Model:</label>
+          <select
+            id="model"
+            value={settings.model}
+            onChange={(e) => handleChange('model', e.target.value)}
+            disabled={disabled}
+          >
+            {resources?.models && Array.isArray(resources.models) ? 
+              resources.models.map(model => (
+                <option key={model} value={model}>{model}</option>
+              )) : 
+              <option value="">Loading...</option>
+            }
+          </select>
+        </div>
+        
+        <div className="setting-group">
           <label htmlFor="responseModality">Response Mode:</label>
           <select
             id="responseModality"

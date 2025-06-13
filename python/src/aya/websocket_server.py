@@ -6,10 +6,11 @@ Provides real-time status updates and control interface for Tauri frontend
 import asyncio
 import json
 import logging
+import time
 import websockets
 import traceback
 from typing import Dict, Any, Set, Optional, Callable
-from aya.utils import list_system_messages, LANGUAGES, VOICES, AUDIO_SOURCES, VIDEO_MODES, MODALITIES, create_gemini_config
+from aya.utils import list_system_messages, LANGUAGES, VOICES, AUDIO_SOURCES, VIDEO_MODES, MODALITIES, GEMINI_LIVE_MODELS, create_gemini_config
 from aya.live_loop import LiveLoop
 from aya.function_registry import FunctionRegistry, get_declarations_for_functions
 from aya.gemini_tools import get_current_date_and_time
@@ -57,6 +58,10 @@ class AyaWebSocketServer:
         
         # Register the channel function once during initialization
         self._register_channel_function()
+
+    def _get_timestamp(self) -> float:
+        """Get current timestamp in milliseconds (JavaScript format)"""
+        return time.time() * 1000
 
     def _register_channel_function(self):
         """Register the send_message_to_channel function once during initialization"""
@@ -179,7 +184,7 @@ class AyaWebSocketServer:
             "type": "status",
             "status": self.status,
             "isRunning": self.is_running,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": self._get_timestamp()
         }
         await websocket.send(json.dumps(status_message))
 
@@ -189,7 +194,7 @@ class AyaWebSocketServer:
             "type": "error",
             "error": error,
             "stackTrace": stack_trace,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": self._get_timestamp()
         }
         await self.send_to_all(error_message)
 
@@ -200,7 +205,7 @@ class AyaWebSocketServer:
             "sender": sender,
             "message": message,
             "channel": channel,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": self._get_timestamp()
         }
         await self.send_to_all(chat_message)
 
@@ -210,7 +215,7 @@ class AyaWebSocketServer:
             "type": "log_message",
             "level": level,
             "message": message,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": self._get_timestamp()
         }
         await self.send_to_all(log_message)
 
@@ -225,7 +230,7 @@ class AyaWebSocketServer:
                 await self.send_to_all({
                     "type": "channel_added",
                     "channel": channel,
-                    "timestamp": asyncio.get_event_loop().time()
+                    "timestamp": self._get_timestamp()
                 })
             
             await self.send_chat_message(sender, message, channel)
@@ -242,7 +247,7 @@ class AyaWebSocketServer:
             "type": "status",
             "status": status,
             "isRunning": self.is_running,
-            "timestamp": asyncio.get_event_loop().time()
+            "timestamp": self._get_timestamp()
         }
         
         if data:
@@ -274,7 +279,7 @@ class AyaWebSocketServer:
                             await websocket.send(json.dumps({
                                 "type": "error",
                                 "error": f"Stop command failed: {str(stop_error)}",
-                                "timestamp": asyncio.get_event_loop().time()
+                                "timestamp": self._get_timestamp()
                             }))
                     
                     elif command == "get_resources":
@@ -297,7 +302,7 @@ class AyaWebSocketServer:
                         await websocket.send(json.dumps({
                             "type": "error",
                             "error": f"Unknown command: {command}",
-                            "timestamp": asyncio.get_event_loop().time()
+                            "timestamp": self._get_timestamp()
                         }))
                         continue  # Skip sending status update
                     
@@ -313,7 +318,7 @@ class AyaWebSocketServer:
                     await websocket.send(json.dumps({
                         "type": "error",
                         "error": "Invalid JSON format",
-                        "timestamp": asyncio.get_event_loop().time()
+                        "timestamp": self._get_timestamp()
                     }))
         
         except websockets.exceptions.ConnectionClosed as e:
@@ -353,7 +358,7 @@ class AyaWebSocketServer:
                     await websocket.send(json.dumps({
                         "type": "error",
                         "error": f"Server error: {str(e)}",
-                        "timestamp": asyncio.get_event_loop().time()
+                        "timestamp": self._get_timestamp()
                     }))
             except Exception as send_error:
                 logger.error(f"Failed to send error to client: {send_error}")
@@ -394,7 +399,7 @@ class AyaWebSocketServer:
                 await self.send_to_all({
                     "type": "error",
                     "error": "Voice agent is already running",
-                    "timestamp": asyncio.get_event_loop().time()
+                    "timestamp": self._get_timestamp()
                 })
                 return
                 
@@ -405,6 +410,7 @@ class AyaWebSocketServer:
             video_mode = config.get("videoMode", "none")
             language_display = config.get("language", "English (US)")  # Display name from frontend
             voice_display = config.get("voice", "Leda (Female)")  # Display name from frontend
+            model_display = config.get("model", "Gemini 2.0 Flash Live")  # Display name from frontend
             response_modality = config.get("responseModality", "AUDIO")
             audio_source = config.get("audioSource", "microphone")
             system_prompt_path = config.get("systemPrompt", "system_prompts/default/aya_default_tools_cli.txt")
@@ -413,9 +419,11 @@ class AyaWebSocketServer:
             # Convert display names to actual values
             language_code = LANGUAGES.get(language_display, "en-US")  # Convert display name to language code
             voice_name = VOICES.get(voice_display, "Leda")  # Convert display name to voice name
+            model_name = GEMINI_LIVE_MODELS.get(model_display, DEFAULT_MODEL)  # Convert display name to model name
             
             logger.info(f"Language: {language_display} -> {language_code}")
             logger.info(f"Voice: {voice_display} -> {voice_name}")
+            logger.info(f"Model: {model_display} -> {model_name}")
             
             # Create Gemini configuration
             gemini_config = create_gemini_config(
@@ -427,10 +435,10 @@ class AyaWebSocketServer:
                 temperature=0.05
             )
             
-            # Create LiveLoop instance with default function executor
+            # Create LiveLoop instance with
             self.live_loop = LiveLoop(
                 video_mode=video_mode,
-                model=DEFAULT_MODEL,
+                model=model_name,
                 config=gemini_config,
                 initial_message=initial_message,
                 audio_source=audio_source,
@@ -538,7 +546,7 @@ class AyaWebSocketServer:
                 await self.send_to_all({
                     "type": "error",
                     "error": "Voice agent is not running",
-                    "timestamp": asyncio.get_event_loop().time()
+                    "timestamp": self._get_timestamp()
                 })
                 return
                 
@@ -656,11 +664,13 @@ class AyaWebSocketServer:
                 # Frontend will display these names and send them back in start commands
                 languages_list = list(LANGUAGES.keys())  # Display names like "English (US)"
                 voices_list = list(VOICES.keys())  # Display names like "Leda (Female)"
-                logger.debug(f"Languages: {len(languages_list)}, Voices: {len(voices_list)}")
+                models_list = list(GEMINI_LIVE_MODELS.keys())  # Display names like "Gemini 2.0 Flash Live"
+                logger.debug(f"Languages: {len(languages_list)}, Voices: {len(voices_list)}, Models: {len(models_list)}")
             except Exception as e:
-                logger.error(f"Error loading languages/voices: {e}")
+                logger.error(f"Error loading languages/voices/models: {e}")
                 languages_list = ["English (US)"]
                 voices_list = ["Leda (Female)"]
+                models_list = ["Gemini 2.0 Flash Live"]
             
             # Create the response with explicit type field
             resources = {
@@ -672,9 +682,10 @@ class AyaWebSocketServer:
                     "audioSources": AUDIO_SOURCES,
                     "videoModes": VIDEO_MODES,
                     "responseModalities": MODALITIES,
+                    "models": models_list,  # Now a list of display names
                     "availableChannels": self.available_channels  # dynamic channels
                 },
-                "timestamp": asyncio.get_event_loop().time()
+                "timestamp": self._get_timestamp()
             }
             
             logger.info(f"Sending resources with {len(resources['resources'])} categories")
@@ -727,7 +738,7 @@ class AyaWebSocketServer:
             error_response = {
                 "type": "error",
                 "error": f"Failed to get resources: {str(e)}",
-                "timestamp": asyncio.get_event_loop().time()
+                "timestamp": self._get_timestamp()
             }
             await websocket.send(json.dumps(error_response))
 
@@ -840,4 +851,4 @@ if __name__ == "__main__":
             await server.stop_server()
     
     # Start the server
-    asyncio.run(main()) 
+    asyncio.run(main())
