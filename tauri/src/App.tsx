@@ -14,6 +14,7 @@ function App() {
     settings,
     resources,
     messages,
+    availableChannels,
     startAgent,
     stopAgent,
     updateSettings,
@@ -66,6 +67,7 @@ function App() {
               onClearChannel={clearChannel}
               disabled={!isRunning}
               isConnected={isConnected}
+              availableChannels={availableChannels}
             />
           </div>
         </div>

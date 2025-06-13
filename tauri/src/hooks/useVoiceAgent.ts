@@ -23,12 +23,13 @@ export const useVoiceAgent = () => {
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState<string | null>(null);
   const [resources, setResources] = useState<AyaResources | null>(null);
+  // Temporarily removing availableChannels state
+  // const [availableChannels, setAvailableChannels] = useState<string[]>(['conversation', 'logs', 'status']);
   
-  // Chat state management
+  // Chat state management - start with basic channels
   const [messages, setMessages] = useState<Record<TextChannel, ChatMessage[]>>({
     conversation: [],
     logs: [],
-    hints: [],
     status: []
   });
 
@@ -39,7 +40,7 @@ export const useVoiceAgent = () => {
     messages: wsMessages, 
     error: wsError, 
     sendMessage 
-  } = useWebSocket('ws://localhost:8765');
+  } = useWebSocket('ws://127.0.0.1:8765');
 
   // Helper function to generate message ID
   const generateMessageId = () => {
@@ -48,10 +49,38 @@ export const useVoiceAgent = () => {
 
   // Helper function to add message to a channel
   const addMessageToChannel = useCallback((channel: TextChannel, message: ChatMessage) => {
-    setMessages(prev => ({
+    setMessages(prev => {
+      // Ensure the channel exists in messages
+      const updatedMessages = { ...prev };
+      if (!updatedMessages[channel]) {
+        updatedMessages[channel] = [];
+      }
+      return {
+        ...updatedMessages,
+        [channel]: [...updatedMessages[channel], message]
+      };
+    });
+  }, []);
+
+  // Add a new channel if it doesn't exist
+  const addChannel = useCallback((channel: string) => {
+    // Temporarily removing availableChannels handling
+    // setAvailableChannels(prev => {
+    //   if (!prev.includes(channel)) {
+    //     return [...prev, channel];
+    //   }
+    //   return prev;
+    // });
+    
+    setMessages(prev => {
+      if (!prev[channel]) {
+        return {
       ...prev,
-      [channel]: [...prev[channel], message]
-    }));
+          [channel]: []
+        };
+      }
+      return prev;
+    });
   }, []);
 
   // Send a chat message
@@ -291,12 +320,47 @@ export const useVoiceAgent = () => {
         case 'resources':
           console.log('=== PROCESSING RESOURCES MESSAGE ===', latestMessage.resources);
           console.log('=== WEBSOCKET CONNECTION STATE BEFORE SETTING RESOURCES ===', isConnected);
+          console.log('=== DETAILED RESOURCES CONTENT ===', {
+            systemPrompts: latestMessage.resources?.systemPrompts,
+            languages: latestMessage.resources?.languages,
+            voices: latestMessage.resources?.voices,
+            audioSources: latestMessage.resources?.audioSources,
+            videoModes: latestMessage.resources?.videoModes,
+            responseModalities: latestMessage.resources?.responseModalities,
+            availableChannels: latestMessage.resources?.availableChannels
+          });
           setResources(latestMessage.resources);
+          
+          // Temporarily removing availableChannels handling
+          /*
+          // Update available channels from resources
+          if (latestMessage.resources.availableChannels) {
+            setAvailableChannels(latestMessage.resources.availableChannels);
+            
+            // Initialize message arrays for new channels
+            latestMessage.resources.availableChannels.forEach(channel => {
+              setMessages(prev => {
+                if (!prev[channel]) {
+                  return {
+                    ...prev,
+                    [channel]: []
+                  };
+                }
+                return prev;
+              });
+            });
+          }
+          */
+          
           console.log('=== RESOURCES SET, CHECKING CONNECTION STATE ===', isConnected);
           break;
           
         case 'chat_message':
           console.log('=== PROCESSING CHAT MESSAGE ===', latestMessage);
+          
+          // Add the channel if it doesn't exist
+          addChannel(latestMessage.channel);
+          
           const chatMessage: ChatMessage = {
             id: generateMessageId(),
             sender: latestMessage.sender,
@@ -317,6 +381,20 @@ export const useVoiceAgent = () => {
           addMessageToChannel('logs', logMessage);
           break;
           
+        case 'channel_added':
+          console.log('=== PROCESSING CHANNEL ADDED MESSAGE ===', latestMessage);
+          addChannel(latestMessage.channel);
+          
+          // Add a system message to the logs about the new channel
+          const channelAddedMessage: ChatMessage = {
+            id: generateMessageId(),
+            sender: 'system',
+            message: `New channel added: ${latestMessage.channel}`,
+            timestamp: latestMessage.timestamp
+          };
+          addMessageToChannel('logs', channelAddedMessage);
+          break;
+          
         default:
           console.log('=== UNKNOWN MESSAGE TYPE ===', (latestMessage as any).type);
           break;
@@ -324,7 +402,7 @@ export const useVoiceAgent = () => {
     };
     
     handleMessages();
-  }, [wsMessages, addMessageToChannel, isConnected]);
+  }, [wsMessages, addMessageToChannel, isConnected, addChannel]);
 
   // Set WebSocket error
   useEffect(() => {
@@ -393,6 +471,9 @@ export const useVoiceAgent = () => {
     settings,
     resources,
     messages,
+    // Temporarily removing availableChannels from return
+    // availableChannels,
+    availableChannels: ['conversation', 'logs', 'status'], // Hardcode for now
     startAgent,
     stopAgent,
     updateSettings,

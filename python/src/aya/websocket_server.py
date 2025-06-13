@@ -11,8 +11,8 @@ import traceback
 from typing import Dict, Any, Set, Optional, Callable
 from aya.utils import list_system_messages, LANGUAGES, VOICES, AUDIO_SOURCES, VIDEO_MODES, MODALITIES, create_gemini_config
 from aya.live_loop import LiveLoop
-from aya.function_registry import get_declarations_for_functions
-from aya.gemini_tools import print_to_console, get_current_date_and_time
+from aya.function_registry import FunctionRegistry, get_declarations_for_functions
+from aya.gemini_tools import get_current_date_and_time
 
 # Configure logging
 logging.basicConfig(
@@ -24,16 +24,6 @@ logger = logging.getLogger(__name__)
 # Default model for Gemini Live API
 DEFAULT_MODEL = "models/gemini-2.0-flash-live-001"
 
-# Configure tools
-search_tool = {'google_search': {}}
-code_execution_tool = {'code_execution': {}}
-function_tools = {
-    'function_declarations': get_declarations_for_functions([
-        print_to_console,
-        get_current_date_and_time
-    ])
-}
-tools = [search_tool, code_execution_tool, function_tools]
 
 class AyaWebSocketServer:
     """WebSocket server for Aya AI Assistant"""
@@ -51,12 +41,95 @@ class AyaWebSocketServer:
         self.live_loop: Optional[LiveLoop] = None
         self.live_loop_task = None
         
+        # Dynamic channel management
+        self.available_channels = ["conversation", "logs", "status"]  # Initial channels
+        self.protected_channels = {"logs", "status"}  # Protected channels
+        
         # Enable debug logging if requested
         if debug:
             logger.setLevel(logging.DEBUG)
             logger.info("Debug logging enabled")
         else:
             logger.setLevel(logging.INFO)
+            
+        # Set up custom log handler to send logs to the logs channel
+        self._setup_log_handler()
+        
+        # Register the channel function once during initialization
+        self._register_channel_function()
+
+    def _register_channel_function(self):
+        """Register the send_message_to_channel function once during initialization"""
+        @FunctionRegistry.register()
+        def send_message_to_channel(message: str, channel: str = "conversation") -> dict:
+            """
+            Send a message to any channel in the chat interface.
+            Creates new channels dynamically if they don't exist.
+            
+            :param message: The message to send to the channel
+            :param channel: The channel to send the message to (any string)
+            :return: Result confirmation
+            """
+            try:
+                # Add new channel if it doesn't exist
+                if channel not in self.available_channels:
+                    self.available_channels.append(channel)
+                    logger.info(f"Added new channel: {channel}")
+                
+                # Send the message
+                asyncio.create_task(self.send_chat_message("tool", message, channel))
+                return {"result": f"Message sent to '{channel}' channel"}
+                    
+            except Exception as e:
+                # Fallback to console
+                print(f"[{channel.upper()}] tool: {message}")
+                return {"error": f"Failed to send via WebSocket: {str(e)}"}
+        
+        # Store the function reference as a class variable
+        self.send_message_to_channel_func = send_message_to_channel
+
+    def get_tools(self):
+        """Get the complete tools configuration"""
+        # Base tools configuration
+        search_tool = {'google_search': {}}
+        code_execution_tool = {'code_execution': {}}
+
+        function_tools = {
+            'function_declarations': get_declarations_for_functions([
+                get_current_date_and_time,
+                self.send_message_to_channel_func
+            ])
+        }
+        return [search_tool, code_execution_tool, function_tools]
+
+    def _setup_log_handler(self):
+        """Set up a custom log handler that sends logs to the logs channel"""
+        class WebSocketLogHandler(logging.Handler):
+            def __init__(self, server):
+                super().__init__()
+                self.server = server
+                
+            def emit(self, record):
+                if self.server and self.server.clients:
+                    try:
+                        # Format the log message
+                        msg = self.format(record)
+                        # Send to logs channel asynchronously
+                        asyncio.create_task(
+                            self.server.send_chat_message("system", msg, "logs")
+                        )
+                    except Exception:
+                        # Don't let logging errors crash anything
+                        pass
+        
+        # Create and configure the handler
+        ws_handler = WebSocketLogHandler(self)
+        ws_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(levelname)s - %(name)s - %(message)s')
+        ws_handler.setFormatter(formatter)
+        
+        # Add to the main logger
+        logging.getLogger().addHandler(ws_handler)
 
     async def register(self, websocket: websockets.WebSocketServerProtocol):
         """Register a new client"""
@@ -140,6 +213,27 @@ class AyaWebSocketServer:
             "timestamp": asyncio.get_event_loop().time()
         }
         await self.send_to_all(log_message)
+
+    async def send_tool_message(self, message: str, channel: str = "logs", sender: str = "tool"):
+        """Send a message from a tool to a specific channel"""
+        try:
+            # Add new channel if it doesn't exist
+            if channel not in self.available_channels:
+                self.available_channels.append(channel)
+                logger.info(f"Added new channel: {channel}")
+                # Notify clients about new channel
+                await self.send_to_all({
+                    "type": "channel_added",
+                    "channel": channel,
+                    "timestamp": asyncio.get_event_loop().time()
+                })
+            
+            await self.send_chat_message(sender, message, channel)
+            logger.debug(f"Tool message sent to {channel} channel: {message[:50]}...")
+        except Exception as e:
+            logger.error(f"Error sending tool message: {e}")
+            # Fallback to console if WebSocket fails
+            print(f"[{channel.upper()}] {sender}: {message}")
 
     async def update_status(self, status: str, data: Dict[str, Any] = None):
         """Update and broadcast status to all clients"""
@@ -329,11 +423,11 @@ class AyaWebSocketServer:
                 language_code=language_code,
                 voice_name=voice_name,
                 response_modality=response_modality,
-                tools=tools,
+                tools=self.get_tools(),
                 temperature=0.05
             )
             
-            # Create LiveLoop instance
+            # Create LiveLoop instance with default function executor
             self.live_loop = LiveLoop(
                 video_mode=video_mode,
                 model=DEFAULT_MODEL,
@@ -354,7 +448,7 @@ class AyaWebSocketServer:
                 accumulated_text[0] += text
                 
                 # Check if we have a natural break or enough accumulated text
-                if text.endswith(("\n", ".", "!", "?")) or len(accumulated_text[0]) > 200:
+                if text.endswith(("\n", ".", "!", "?")) or len(accumulated_text[0]) > 800:
                     # Send to frontend
                     display_text = accumulated_text[0].strip()
                     if display_text:
@@ -549,13 +643,24 @@ class AyaWebSocketServer:
         try:
             logger.info("Processing get_resources request")
             
-            # Get all available resources
-            system_prompts = list_system_messages()
+            # Get all available resources with individual error handling
+            try:
+                system_prompts = list_system_messages()
+                logger.debug(f"System prompts loaded: {len(system_prompts)} categories")
+            except Exception as e:
+                logger.error(f"Error loading system prompts: {e}")
+                system_prompts = {}
             
-            # Convert dictionaries to lists for frontend consumption
-            # Frontend will display these names and send them back in start commands
-            languages_list = list(LANGUAGES.keys())  # Display names like "English (US)"
-            voices_list = list(VOICES.keys())  # Display names like "Leda (Female)"
+            try:
+                # Convert dictionaries to lists for frontend consumption
+                # Frontend will display these names and send them back in start commands
+                languages_list = list(LANGUAGES.keys())  # Display names like "English (US)"
+                voices_list = list(VOICES.keys())  # Display names like "Leda (Female)"
+                logger.debug(f"Languages: {len(languages_list)}, Voices: {len(voices_list)}")
+            except Exception as e:
+                logger.error(f"Error loading languages/voices: {e}")
+                languages_list = ["English (US)"]
+                voices_list = ["Leda (Female)"]
             
             # Create the response with explicit type field
             resources = {
@@ -566,16 +671,19 @@ class AyaWebSocketServer:
                     "voices": voices_list,  # Now a list of display names
                     "audioSources": AUDIO_SOURCES,
                     "videoModes": VIDEO_MODES,
-                    "responseModalities": MODALITIES
+                    "responseModalities": MODALITIES,
+                    "availableChannels": self.available_channels  # dynamic channels
                 },
                 "timestamp": asyncio.get_event_loop().time()
             }
             
             logger.info(f"Sending resources with {len(resources['resources'])} categories")
+            logger.debug(f"Resource structure: {list(resources['resources'].keys())}")
+            
             # Convert to JSON string and send
             try:
                 resources_json = json.dumps(resources)
-                logger.debug(f"Resources JSON: {resources_json[:100]}...")  # Log first 100 chars
+                logger.debug(f"Resources JSON: {resources_json[:200]}...")  # Log first 200 chars
                 await websocket.send(resources_json)
                 logger.info("Resources sent successfully")
                 

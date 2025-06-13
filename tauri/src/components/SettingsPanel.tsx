@@ -18,6 +18,11 @@ const SettingsPanel: React.FC<SettingsPanelProps> = ({
   const handleChange = (key: keyof AyaSettings, value: any) => {
     onUpdateSettings({ [key]: value });
   };
+  
+  // Debug logging to see what resources we're getting
+  console.log('=== SETTINGS PANEL RESOURCES ===', resources);
+  console.log('=== RESOURCES LANGUAGES ===', resources?.languages);
+  console.log('=== RESOURCES VOICES ===', resources?.voices);
 
   // Flatten system prompts for dropdown
   const flattenSystemPrompts = () => {

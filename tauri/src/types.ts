@@ -30,17 +30,18 @@ export interface AyaResources {
   audioSources: string[];
   videoModes: string[];
   responseModalities: string[];
+  availableChannels: string[];  // Re-enabled dynamic channels
 }
 
 // Chat message types
 export interface ChatMessage {
   id: string;
-  sender: 'user' | 'assistant' | 'system';
+  sender: 'user' | 'assistant' | 'system' | 'tool';
   message: string;
   timestamp: number;
 }
 
-export type TextChannel = 'conversation' | 'logs' | 'hints' | 'status';
+export type TextChannel = string; // Changed to string to support dynamic channels
 
 // WebSocket message types
 export interface BaseWebSocketMessage {
@@ -76,7 +77,7 @@ export interface ResourcesMessage extends BaseWebSocketMessage {
 
 export interface ChatMessageReceived extends BaseWebSocketMessage {
   type: 'chat_message';
-  sender: 'assistant' | 'system';
+  sender: 'assistant' | 'system' | 'tool';
   message: string;
   channel: TextChannel;
 }
@@ -87,7 +88,13 @@ export interface LogMessage extends BaseWebSocketMessage {
   message: string;
 }
 
-export type WebSocketMessage = StatusMessage | ErrorMessage | ResourcesMessage | ChatMessageReceived | LogMessage;
+// New message type for when a channel is added
+export interface ChannelAddedMessage extends BaseWebSocketMessage {
+  type: 'channel_added';
+  channel: string;
+}
+
+export type WebSocketMessage = StatusMessage | ErrorMessage | ResourcesMessage | ChatMessageReceived | LogMessage | ChannelAddedMessage;
 
 // WebSocket command types
 export interface BaseWebSocketCommand {

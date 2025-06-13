@@ -8,6 +8,7 @@ interface ChatBoxProps {
   onClearChannel: (channel: TextChannel) => void;
   disabled?: boolean;
   isConnected?: boolean;
+  availableChannels?: string[];  // Dynamic channels from backend
 }
 
 const ChatBox: React.FC<ChatBoxProps> = ({ 
@@ -15,18 +16,26 @@ const ChatBox: React.FC<ChatBoxProps> = ({
   onSendMessage, 
   onClearChannel, 
   disabled = false,
-  isConnected = false
+  isConnected = false,
+  availableChannels = ["conversation", "logs", "status"]  // Default initial channels
 }) => {
   const [currentChannel, setCurrentChannel] = useState<TextChannel>('conversation');
   const [inputMessage, setInputMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const channels: { value: TextChannel; label: string }[] = [
-    { value: 'conversation', label: 'Conversation' },
-    { value: 'logs', label: 'Logs' },
-    { value: 'hints', label: 'Hints' },
-    { value: 'status', label: 'Status' }
-  ];
+  // Create channel options from available channels
+  const channels = useMemo(() => {
+    const channelMap: Record<string, string> = {
+      'conversation': 'Conversation',
+      'logs': 'Logs',
+      'status': 'Status'
+    };
+
+    return availableChannels.map(channel => ({
+      value: channel as TextChannel,
+      label: channelMap[channel] || channel.charAt(0).toUpperCase() + channel.slice(1)
+    }));
+  }, [availableChannels]);
 
   const currentMessages = useMemo(() => messages[currentChannel] || [], [messages, currentChannel]);
 
@@ -34,6 +43,13 @@ const ChatBox: React.FC<ChatBoxProps> = ({
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentMessages]);
+
+  // Switch to first available channel if current channel is no longer available
+  useEffect(() => {
+    if (!availableChannels.includes(currentChannel) && availableChannels.length > 0) {
+      setCurrentChannel(availableChannels[0] as TextChannel);
+    }
+  }, [availableChannels, currentChannel]);
 
   const handleSendMessage = () => {
     const trimmedMessage = inputMessage.trim();
@@ -67,6 +83,7 @@ const ChatBox: React.FC<ChatBoxProps> = ({
       case 'user': return 'You';
       case 'assistant': return 'Aya';
       case 'system': return 'System';
+      case 'tool': return 'Tool';
       default: return sender;
     }
   };
