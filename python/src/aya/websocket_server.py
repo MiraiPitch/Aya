@@ -52,6 +52,8 @@ class AyaWebSocketServer:
             logger.info("Debug logging enabled")
         else:
             logger.setLevel(logging.INFO)
+        
+        self._pending_messages = []
             
         # Set up custom log handler to send logs to the logs channel
         self._setup_log_handler()
@@ -76,14 +78,40 @@ class AyaWebSocketServer:
             :return: Result confirmation
             """
             try:
+                if channel in self.protected_channels:
+                    return {"error": f"Cannot send message to protected channel: {channel}"}
+
                 # Add new channel if it doesn't exist
                 if channel not in self.available_channels:
                     self.available_channels.append(channel)
                     logger.info(f"Added new channel: {channel}")
+                    self._pending_messages.append({
+                        'type': 'channel_added',
+                        'channel': channel,
+                        'timestamp': self._get_timestamp()
+                    })
                 
-                # Send the message
-                asyncio.create_task(self.send_chat_message("tool", message, channel))
-                return {"result": f"Message sent to '{channel}' channel"}
+                # Store the message in a queue for later processing
+                # This avoids any async operations during tool execution
+                self._pending_messages.append({
+                    'type': 'message',
+                    'sender': 'tool',
+                    'message': message, 
+                    'channel': channel,
+                    'timestamp': self._get_timestamp()
+                })
+                    
+                
+                # Schedule processing of pending messages
+                try:
+                    import asyncio
+                    asyncio.create_task(self._process_pending_messages())
+                except Exception:
+                    # If we can't schedule, just print to console
+                    print("Error scheduling pending messages")
+                    print(f"[{channel.upper()}] tool: {message}")
+                
+                return {"result": f"Message sent to {channel} channel"}
                     
             except Exception as e:
                 # Fallback to console
@@ -92,6 +120,34 @@ class AyaWebSocketServer:
         
         # Store the function reference as a class variable
         self.send_message_to_channel_func = send_message_to_channel
+
+    async def _process_pending_messages(self):
+        """Process any pending messages from tool calls"""
+        if not hasattr(self, '_pending_messages') or not self._pending_messages:
+            return
+            
+        # Process all pending messages
+        messages_to_process = self._pending_messages.copy()
+        self._pending_messages.clear()
+        
+        for item in messages_to_process:
+            try:
+                if item['type'] == 'message':
+                    await self.send_chat_message(item['sender'], item['message'], item['channel'])
+                    logger.debug(f"Processed pending tool message: {item['message'][:50]}...")
+                elif item['type'] == 'channel_added':
+                    # Send channel_added notification
+                    await self.send_to_all({
+                        "type": "channel_added",
+                        "channel": item['channel'],
+                        "timestamp": item['timestamp']
+                    })
+                    logger.debug(f"Processed pending channel notification: {item['channel']}")
+            except Exception as e:
+                logger.error(f"Error processing pending item: {e}")
+                # Fallback to console for messages
+                if item['type'] == 'message':
+                    print(f"[{item['channel'].upper()}] {item['sender']}: {item['message']}")
 
     def get_tools(self):
         """Get the complete tools configuration"""

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/tauri';
 import { appWindow } from '@tauri-apps/api/window';
 import { 
@@ -23,8 +23,11 @@ export const useVoiceAgent = () => {
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState<string | null>(null);
   const [resources, setResources] = useState<AyaResources | null>(null);
-  // Temporarily removing availableChannels state
-  // const [availableChannels, setAvailableChannels] = useState<string[]>(['conversation', 'logs', 'status']);
+  const [availableChannels, setAvailableChannels] = useState<string[]>(['conversation', 'logs', 'status']);
+  
+  // Resource fetching retry state
+  const [resourceRetryCount, setResourceRetryCount] = useState(0);
+  const resourceRetryTimeoutRef = useRef<number | null>(null);
   
   // Chat state management - start with basic channels
   const [messages, setMessages] = useState<Record<TextChannel, ChatMessage[]>>({
@@ -64,18 +67,17 @@ export const useVoiceAgent = () => {
 
   // Add a new channel if it doesn't exist
   const addChannel = useCallback((channel: string) => {
-    // Temporarily removing availableChannels handling
-    // setAvailableChannels(prev => {
-    //   if (!prev.includes(channel)) {
-    //     return [...prev, channel];
-    //   }
-    //   return prev;
-    // });
+    setAvailableChannels(prev => {
+      if (!prev.includes(channel)) {
+        return [...prev, channel];
+      }
+      return prev;
+    });
     
     setMessages(prev => {
       if (!prev[channel]) {
         return {
-      ...prev,
+          ...prev,
           [channel]: []
         };
       }
@@ -240,15 +242,50 @@ export const useVoiceAgent = () => {
     }
   }, [isConnected, isRunning, sendMessage, addMessageToChannel]);
 
-  // Request resources from the Python bridge
-  const fetchResources = useCallback(() => {
+  // Request resources from the Python bridge with retry logic
+  const fetchResources = useCallback((retryAttempt = 0) => {
     if (isConnected) {
+      console.log(`=== FETCHING RESOURCES (Attempt ${retryAttempt + 1}) ===`);
       const getResourcesCommand: GetResourcesCommand = {
         command: 'get_resources'
       };
-      sendMessage(getResourcesCommand);
+      
+      const success = sendMessage(getResourcesCommand);
+      if (success) {
+        setResourceRetryCount(retryAttempt);
+        
+        // Set up a timeout to retry if resources aren't received
+        if (resourceRetryTimeoutRef.current) {
+          window.clearTimeout(resourceRetryTimeoutRef.current);
+        }
+        
+        resourceRetryTimeoutRef.current = window.setTimeout(() => {
+          if (!resources && retryAttempt < 10) { // Max 10 retries
+            const delay = Math.min(1000 * Math.pow(1.5, retryAttempt), 10000); // Exponential backoff, max 10s
+            console.log(`=== RESOURCES NOT RECEIVED, RETRYING IN ${delay}ms ===`);
+            
+            setTimeout(() => {
+              fetchResources(retryAttempt + 1);
+            }, delay);
+          } else if (retryAttempt >= 10) {
+            console.error('=== MAX RESOURCE FETCH RETRIES REACHED ===');
+            setError('Failed to fetch resources after multiple attempts');
+            
+            // Add error message to logs
+            const errorMessage: ChatMessage = {
+              id: generateMessageId(),
+              sender: 'system',
+              message: 'Failed to fetch resources after multiple attempts. Please try restarting the application.',
+              timestamp: Date.now()
+            };
+            addMessageToChannel('logs', errorMessage);
+          }
+        }, 3000); // Wait 3 seconds before considering it failed
+      } else {
+        console.error('=== FAILED TO SEND GET_RESOURCES COMMAND ===');
+      }
     }
-  }, [isConnected, sendMessage]);
+  }, [isConnected, sendMessage, resources, addMessageToChannel]);
 
   // Clear any error messages
   const clearError = useCallback(() => {
@@ -329,10 +366,25 @@ export const useVoiceAgent = () => {
             responseModalities: latestMessage.resources?.responseModalities,
             availableChannels: latestMessage.resources?.availableChannels
           });
-          setResources(latestMessage.resources);
           
-          // Temporarily removing availableChannels handling
-          /*
+          // Clear any pending retry timeout since we got resources
+          if (resourceRetryTimeoutRef.current) {
+            window.clearTimeout(resourceRetryTimeoutRef.current);
+            resourceRetryTimeoutRef.current = null;
+          }
+          
+          setResources(latestMessage.resources);
+          setResourceRetryCount(0); // Reset retry count on successful fetch
+          
+          // Add success message to logs
+          const resourcesMessage: ChatMessage = {
+            id: generateMessageId(),
+            sender: 'system',
+            message: `Resources loaded successfully (${resourceRetryCount > 0 ? `after ${resourceRetryCount + 1} attempts` : 'on first attempt'})`,
+            timestamp: Date.now()
+          };
+          addMessageToChannel('logs', resourcesMessage);
+          
           // Update available channels from resources
           if (latestMessage.resources.availableChannels) {
             setAvailableChannels(latestMessage.resources.availableChannels);
@@ -350,7 +402,6 @@ export const useVoiceAgent = () => {
               });
             });
           }
-          */
           
           console.log('=== RESOURCES SET, CHECKING CONNECTION STATE ===', isConnected);
           break;
@@ -421,14 +472,36 @@ export const useVoiceAgent = () => {
     }
   }, [wsError, addMessageToChannel]);
 
-  // Fetch resources when connected
+  // Fetch resources when connected with improved retry logic
   useEffect(() => {
-    console.log('=== FETCH RESOURCES EFFECT ===', { isConnected, hasResources: !!resources });
+    console.log('=== FETCH RESOURCES EFFECT ===', { isConnected, hasResources: !!resources, retryCount: resourceRetryCount });
     if (isConnected && !resources) {
       console.log('=== CALLING FETCH RESOURCES ===');
-      fetchResources();
+      fetchResources(0); // Start with attempt 0
     }
+    
+    // Cleanup timeout on unmount or when resources are received
+    return () => {
+      if (resourceRetryTimeoutRef.current) {
+        window.clearTimeout(resourceRetryTimeoutRef.current);
+        resourceRetryTimeoutRef.current = null;
+      }
+    };
   }, [isConnected, resources, fetchResources]);
+
+  // Periodic retry for resources if still missing after connection is established
+  useEffect(() => {
+    if (isConnected && !resources) {
+      const intervalId = setInterval(() => {
+        if (isConnected && !resources && resourceRetryCount < 5) {
+          console.log('=== PERIODIC RESOURCE FETCH RETRY ===');
+          fetchResources(resourceRetryCount);
+        }
+      }, 15000); // Try every 15 seconds
+
+      return () => clearInterval(intervalId);
+    }
+  }, [isConnected, resources, resourceRetryCount, fetchResources]);
 
   // Check if Python bridge is running on mount (but don't set voice agent state)
   useEffect(() => {
@@ -464,6 +537,16 @@ export const useVoiceAgent = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isConnected, fetchResources]);
 
+  // Cleanup effect for timeouts
+  useEffect(() => {
+    return () => {
+      if (resourceRetryTimeoutRef.current) {
+        window.clearTimeout(resourceRetryTimeoutRef.current);
+        resourceRetryTimeoutRef.current = null;
+      }
+    };
+  }, []);
+
   return {
     isRunning,
     status,
@@ -471,9 +554,7 @@ export const useVoiceAgent = () => {
     settings,
     resources,
     messages,
-    // Temporarily removing availableChannels from return
-    // availableChannels,
-    availableChannels: ['conversation', 'logs', 'status'], // Hardcode for now
+    availableChannels,
     startAgent,
     stopAgent,
     updateSettings,
@@ -483,6 +564,8 @@ export const useVoiceAgent = () => {
     isLoaded: loaded,
     isConnected,
     isConnecting,
-    wsError
+    wsError,
+    // Expose retry count for debugging
+    resourceRetryCount
   };
 }; 
